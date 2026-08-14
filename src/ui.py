@@ -19,14 +19,14 @@ def _logo_data_uri() -> str | None:
 
 
 def render_header(title: str) -> None:
-    """Logo + page title in one flex row, vertically centered against each other."""
+    """Logo above the page title, stacked in their own rows."""
     logo_uri = _logo_data_uri()
     logo_html = f'<img src="{logo_uri}" style="height:56px;" />' if logo_uri else "🎓"
     st.markdown(
         f"""
-        <div style="display:flex; align-items:center; gap:1.25rem; margin: 0.5rem 0 1.5rem 0;">
+        <div style="display:flex; flex-direction:column; gap:0.5rem; margin: 0.5rem 0 1.5rem 0;">
           {logo_html}
-          <h1 style="margin:0; line-height:1;">{title}</h1>
+          <h1 style="margin:0; line-height:1.1;">{title}</h1>
         </div>
         """,
         unsafe_allow_html=True,
