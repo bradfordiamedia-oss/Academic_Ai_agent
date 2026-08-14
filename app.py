@@ -125,23 +125,12 @@ if tool == "Thesis Qualification Checker":
             report_md = result.get("full_report_markdown", "")
             st.markdown(report_md)
 
-            dl_col1, dl_col2 = st.columns(2)
-            with dl_col1:
-                st.download_button(
-                    "Download report (Markdown)",
-                    data=report_md,
-                    file_name="thesis_evaluation_report.md",
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
-            with dl_col2:
-                st.download_button(
-                    "Download report (PDF)",
-                    data=markdown_to_pdf_bytes(report_md, "Thesis Evaluation Report"),
-                    file_name="thesis_evaluation_report.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
+            st.download_button(
+                "Download report (PDF)",
+                data=markdown_to_pdf_bytes(report_md, "Thesis Evaluation Report"),
+                file_name="thesis_evaluation_report.pdf",
+                mime="application/pdf",
+            )
 
 else:
     st.header("Exam Auto-Grader")
@@ -183,20 +172,9 @@ else:
             report_md = result.get("full_report_markdown", "")
             st.markdown(report_md)
 
-            dl_col1, dl_col2 = st.columns(2)
-            with dl_col1:
-                st.download_button(
-                    "Download report (Markdown)",
-                    data=report_md,
-                    file_name="exam_grading_report.md",
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
-            with dl_col2:
-                st.download_button(
-                    "Download report (PDF)",
-                    data=markdown_to_pdf_bytes(report_md, "Exam Grading Report"),
-                    file_name="exam_grading_report.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
+            st.download_button(
+                "Download report (PDF)",
+                data=markdown_to_pdf_bytes(report_md, "Exam Grading Report"),
+                file_name="exam_grading_report.pdf",
+                mime="application/pdf",
+            )
