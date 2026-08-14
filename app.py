@@ -30,12 +30,30 @@ tool = st.sidebar.radio(
 )
 
 
+@st.cache_data(show_spinner=False)
+def _extract_cached(file_bytes: bytes, filename: str) -> str:
+    return extract_text(file_bytes, filename)
+
+
+@st.cache_data(show_spinner="Evaluating thesis against guidelines...")
+def _evaluate_thesis_cached(guidelines_text: str, thesis_text: str) -> dict:
+    return evaluate_thesis(guidelines_text, thesis_text)
+
+
+@st.cache_data(show_spinner="Grading submission...")
+def _grade_exam_cached(
+    questions_text: str, answer_key_text: str, student_answers_text: str, passing_threshold: int
+) -> dict:
+    return grade_exam(questions_text, answer_key_text, student_answers_text, passing_threshold)
+
+
 def _read_upload(label: str, key: str):
     uploaded = st.file_uploader(label, type=["pdf", "docx", "txt", "md"], key=key)
     if uploaded is None:
         return None
     try:
-        text = extract_text(uploaded.getvalue(), uploaded.name)
+        with st.spinner(f"Reading {uploaded.name}..."):
+            text = _extract_cached(uploaded.getvalue(), uploaded.name)
     except Exception as exc:  # noqa: BLE001 - surface any failure to the user
         st.error(f"Couldn't read {uploaded.name}: {exc}")
         return None
@@ -65,32 +83,31 @@ if tool == "Thesis Qualification Checker":
         thesis_text = _read_upload("Thesis document", "thesis")
 
     if st.button("Evaluate Thesis", type="primary", disabled=not (guidelines_text and thesis_text)):
-        with st.spinner("Evaluating thesis against guidelines..."):
-            try:
-                result = evaluate_thesis(guidelines_text, thesis_text)
-            except Exception as exc:  # noqa: BLE001 - surface any failure to the user
-                st.error(f"Evaluation failed: {exc}")
-                st.exception(exc)
-            else:
-                verdict = result.get("qualified", "Unknown")
-                pct = result.get("acceptance_percentage", 0)
+        try:
+            result = _evaluate_thesis_cached(guidelines_text, thesis_text)
+        except Exception as exc:  # noqa: BLE001 - surface any failure to the user
+            st.error(f"Evaluation failed: {exc}")
+            st.exception(exc)
+        else:
+            verdict = result.get("qualified", "Unknown")
+            pct = result.get("acceptance_percentage", 0)
 
-                gcol, vcol = st.columns([1, 1])
-                with gcol:
-                    render_gauge(pct, "Acceptance")
-                with vcol:
-                    st.metric("Verdict", verdict)
+            gcol, vcol = st.columns([1, 1])
+            with gcol:
+                render_gauge(pct, "Acceptance")
+            with vcol:
+                st.metric("Verdict", verdict)
 
-                st.subheader("Full Report")
-                report_md = result.get("full_report_markdown", "")
-                st.markdown(report_md)
+            st.subheader("Full Report")
+            report_md = result.get("full_report_markdown", "")
+            st.markdown(report_md)
 
-                st.download_button(
-                    "Download report (Markdown)",
-                    data=report_md,
-                    file_name="thesis_evaluation_report.md",
-                    mime="text/markdown",
-                )
+            st.download_button(
+                "Download report (Markdown)",
+                data=report_md,
+                file_name="thesis_evaluation_report.md",
+                mime="text/markdown",
+            )
 
 else:
     st.header("Exam Auto-Grader")
@@ -112,33 +129,29 @@ else:
 
     ready = bool(questions_text and answer_key_text and student_answers_text)
     if st.button("Grade Submission", type="primary", disabled=not ready):
-        with st.spinner("Grading submission..."):
-            try:
-                result = grade_exam(
-                    questions_text,
-                    answer_key_text,
-                    student_answers_text,
-                    passing_threshold=passing_threshold,
-                )
-            except Exception as exc:  # noqa: BLE001 - surface any failure to the user
-                st.error(f"Grading failed: {exc}")
-                st.exception(exc)
-            else:
-                gcol, scol, rcol = st.columns([1, 1, 1])
-                with gcol:
-                    render_gauge(result.get("percentage", 0), "Score")
-                with scol:
-                    st.metric("Score", f"{result.get('total_score')} / {result.get('max_score')}")
-                with rcol:
-                    st.metric("Result", "Passed" if result.get("passed") else "Failed")
+        try:
+            result = _grade_exam_cached(
+                questions_text, answer_key_text, student_answers_text, passing_threshold
+            )
+        except Exception as exc:  # noqa: BLE001 - surface any failure to the user
+            st.error(f"Grading failed: {exc}")
+            st.exception(exc)
+        else:
+            gcol, scol, rcol = st.columns([1, 1, 1])
+            with gcol:
+                render_gauge(result.get("percentage", 0), "Score")
+            with scol:
+                st.metric("Score", f"{result.get('total_score')} / {result.get('max_score')}")
+            with rcol:
+                st.metric("Result", "Passed" if result.get("passed") else "Failed")
 
-                st.subheader("Full Report")
-                report_md = result.get("full_report_markdown", "")
-                st.markdown(report_md)
+            st.subheader("Full Report")
+            report_md = result.get("full_report_markdown", "")
+            st.markdown(report_md)
 
-                st.download_button(
-                    "Download report (Markdown)",
-                    data=report_md,
-                    file_name="exam_grading_report.md",
-                    mime="text/markdown",
-                )
+            st.download_button(
+                "Download report (Markdown)",
+                data=report_md,
+                file_name="exam_grading_report.md",
+                mime="text/markdown",
+            )
