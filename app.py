@@ -30,7 +30,20 @@ def _read_upload(label: str, key: str):
     uploaded = st.file_uploader(label, type=["pdf", "docx", "txt", "md"], key=key)
     if uploaded is None:
         return None
-    return extract_text(uploaded.getvalue(), uploaded.name)
+    try:
+        text = extract_text(uploaded.getvalue(), uploaded.name)
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the user
+        st.error(f"Couldn't read {uploaded.name}: {exc}")
+        return None
+    if not text.strip():
+        st.warning(
+            f"No extractable text found in **{uploaded.name}**. If this is a "
+            "scanned PDF (a photo/image of text rather than real text), this app "
+            "can't read it directly — try a text-based export, or run it through "
+            "OCR first."
+        )
+        return None
+    return text
 
 
 if tool == "Thesis Qualification Checker":
