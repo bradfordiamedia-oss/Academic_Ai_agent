@@ -11,12 +11,25 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     """Extract plain text from an uploaded file based on its extension."""
     lower = filename.lower()
     if lower.endswith(".pdf"):
-        return _extract_pdf(file_bytes)
-    if lower.endswith(".docx"):
-        return _extract_docx(file_bytes)
-    if lower.endswith(".txt") or lower.endswith(".md"):
-        return file_bytes.decode("utf-8", errors="ignore")
-    raise ValueError(f"Unsupported file type: {filename}. Use PDF, DOCX, or TXT.")
+        text = _extract_pdf(file_bytes)
+    elif lower.endswith(".docx"):
+        text = _extract_docx(file_bytes)
+    elif lower.endswith(".txt") or lower.endswith(".md"):
+        text = file_bytes.decode("utf-8", errors="ignore")
+    else:
+        raise ValueError(f"Unsupported file type: {filename}. Use PDF, DOCX, or TXT.")
+    return _sanitize(text)
+
+
+def _sanitize(text: str) -> str:
+    """Strip characters that can't survive a UTF-8 round trip.
+
+    OCR on noisy/garbled scans can occasionally produce invalid Unicode (e.g.
+    lone surrogate characters from a botched byte decode somewhere upstream),
+    which crashes the API request later. Scrubbing it here keeps that failure
+    from ever reaching the LLM call.
+    """
+    return text.encode("utf-8", errors="ignore").decode("utf-8")
 
 
 def _extract_pdf(file_bytes: bytes) -> str:
