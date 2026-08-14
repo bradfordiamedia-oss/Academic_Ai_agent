@@ -26,7 +26,8 @@ Supported upload formats: PDF, DOCX, TXT, MD.
 ## Setup
 
 ```bash
-cd Academic_Agent
+git clone https://github.com/bradfordiamedia-oss/Academic_Ai_agent.git
+cd Academic_Ai_agent
 python -m venv .venv
 .venv\Scripts\activate      # on Windows
 pip install -r requirements.txt
@@ -50,9 +51,9 @@ it needs a persistent server, not serverless functions).
 1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with
    the GitHub account that owns this repo.
 2. Click **New app**, then pick:
-   - Repository: `bradfordiamedia-oss/Bradford`
+   - Repository: `bradfordiamedia-oss/Academic_Ai_agent`
    - Branch: `main`
-   - Main file path: `Academic_Agent/app.py`
+   - Main file path: `app.py`
 3. Click **Advanced settings → Secrets** and paste:
    ```toml
    ANTHROPIC_API_KEY = "your_key_here"
@@ -73,7 +74,7 @@ or locally, per the steps above.
 ## Project structure
 
 ```
-Academic_Agent/
+Academic_Ai_agent/
 ├── app.py                   # Streamlit UI (both tools)
 ├── src/
 │   ├── document_parser.py   # PDF/DOCX/TXT text extraction

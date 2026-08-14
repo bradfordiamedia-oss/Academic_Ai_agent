@@ -28,13 +28,13 @@ PAGE = """<!doctype html>
   <p>Run it yourself:</p>
   <ul>
     <li>Locally: clone the repo, <code>pip install -r requirements.txt</code>, then <code>streamlit run app.py</code></li>
-    <li>Hosted: deploy the <code>Academic_Agent</code> folder on
+    <li>Hosted: deploy this repo on
       <a href="https://share.streamlit.io">Streamlit Community Cloud</a> (see the
       project README for exact steps)</li>
   </ul>
   <p>
-    Source: <a href="https://github.com/bradfordiamedia-oss/Bradford/tree/main/Academic_Agent">
-    bradfordiamedia-oss/Bradford/Academic_Agent</a>
+    Source: <a href="https://github.com/bradfordiamedia-oss/Academic_Ai_agent">
+    bradfordiamedia-oss/Academic_Ai_agent</a>
   </p>
 </body>
 </html>"""
