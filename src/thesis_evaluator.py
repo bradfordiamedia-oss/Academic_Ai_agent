@@ -20,18 +20,18 @@ this exact shape:
   "acceptance_percentage": <integer 0-100>,
   "summary": "<2-4 sentence overall verdict>",
   "criteria_breakdown": [
-    {"criterion": "<name>", "score_percentage": <0-100>, "comments": "<why>"}
+    {"criterion": "<name>", "score_percentage": <0-100>, "comments": "<why, 1-2 sentences>"}
   ],
   "strengths": ["<point>", ...],
   "weaknesses": ["<point>", ...],
-  "recommendations": ["<actionable fix>", ...],
-  "full_report_markdown": "<complete standalone markdown report combining all of the above into readable sections with headings>"
+  "recommendations": ["<actionable fix>", ...]
 }
 
-The output must be valid, strict JSON: escape every literal newline inside a
+Keep every text field concise (comments and points are 1-2 sentences each,
+not paragraphs) - this is a structured breakdown, not a full essay. The
+output must be valid, strict JSON: escape every literal newline inside a
 string as \\n (never a raw line break), and escape any double quotes inside
-string values as \\". This applies especially to "full_report_markdown",
-which is long - make sure every line break in it is written as \\n.
+string values as \\".
 """
 
 USER_PROMPT_TEMPLATE = """UNIVERSITY GUIDELINES:
@@ -53,4 +53,36 @@ def evaluate_thesis(guidelines_text: str, thesis_text: str) -> dict:
         guidelines=guidelines_text.strip(),
         thesis=thesis_text.strip(),
     )
-    return call_json(SYSTEM_PROMPT, prompt)
+    result = call_json(SYSTEM_PROMPT, prompt)
+    result["full_report_markdown"] = _build_report_markdown(result)
+    return result
+
+
+def _build_report_markdown(result: dict) -> str:
+    lines = [
+        "# Thesis Evaluation Report",
+        "",
+        f"**Qualification Status:** {result.get('qualified', 'Unknown')}",
+        f"**Acceptance Percentage:** {result.get('acceptance_percentage', 0)}%",
+        "",
+        "## Summary",
+        result.get("summary", ""),
+        "",
+        "## Criteria Breakdown",
+    ]
+    for item in result.get("criteria_breakdown", []):
+        lines.append(
+            f"- **{item.get('criterion', '')}** "
+            f"({item.get('score_percentage', 0)}%): {item.get('comments', '')}"
+        )
+
+    lines += ["", "## Strengths"]
+    lines += [f"- {point}" for point in result.get("strengths", [])] or ["- None noted."]
+
+    lines += ["", "## Weaknesses"]
+    lines += [f"- {point}" for point in result.get("weaknesses", [])] or ["- None noted."]
+
+    lines += ["", "## Recommendations"]
+    lines += [f"- {point}" for point in result.get("recommendations", [])] or ["- None noted."]
+
+    return "\n".join(lines)
