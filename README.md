@@ -31,7 +31,7 @@ cd Academic_Ai_agent
 python -m venv .venv
 .venv\Scripts\activate      # on Windows
 pip install -r requirements.txt
-copy .env.example .env      # then add your ANTHROPIC_API_KEY
+copy .env.example .env      # then add your ANTHROPIC_API_KEY and APP_PASSWORD
 ```
 
 ## Run
@@ -57,9 +57,13 @@ it needs a persistent server, not serverless functions).
 3. Click **Advanced settings → Secrets** and paste:
    ```toml
    ANTHROPIC_API_KEY = "your_key_here"
+   APP_PASSWORD = "choose_a_password"
    ```
-   (see `.streamlit/secrets.toml.example` for the format — never commit a
-   real key to `secrets.toml` or `.env`, both are gitignored)
+   (see `.streamlit/secrets.toml.example` for the format — never commit real
+   values to `secrets.toml` or `.env`, both are gitignored). `APP_PASSWORD`
+   is the password visitors must enter on the login screen before they can
+   use the app — pick anything, share it only with people you want to have
+   access.
 4. Click **Deploy**. The app builds from `requirements.txt` automatically.
 
 ## About the `api/` folder / `vercel.json`
@@ -80,7 +84,8 @@ Academic_Ai_agent/
 │   ├── document_parser.py   # PDF/DOCX/TXT text extraction
 │   ├── llm_client.py        # Anthropic API wrapper + JSON parsing
 │   ├── thesis_evaluator.py  # Thesis qualification logic + prompt
-│   └── exam_grader.py       # Exam grading logic + prompt
+│   ├── exam_grader.py       # Exam grading logic + prompt
+│   └── ui.py                 # Theming/animation, login gate, percentage gauge
 ├── api/index.py             # Vercel placeholder landing page (see note above)
 ├── vercel.json               # Routes all Vercel traffic to the placeholder
 ├── requirements.txt
@@ -91,6 +96,10 @@ Academic_Ai_agent/
 ## Notes
 
 - Requires an `ANTHROPIC_API_KEY` (get one at console.anthropic.com).
+- The app is gated behind a simple shared-password login screen
+  (`APP_PASSWORD`). This is basic access control, not multi-user accounts —
+  anyone with the password gets full access. Change it in Streamlit Cloud's
+  Secrets whenever you want to revoke access.
 - All evaluation happens per-request; no data is stored by the app itself.
 - Grading/evaluation quality depends on how complete the uploaded guidelines
   and answer keys are — the more explicit the criteria, the more accurate

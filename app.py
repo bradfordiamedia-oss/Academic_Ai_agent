@@ -14,10 +14,15 @@ from dotenv import load_dotenv
 from src.document_parser import extract_text
 from src.exam_grader import grade_exam
 from src.thesis_evaluator import evaluate_thesis
+from src.ui import inject_theme, render_gauge, require_login
 
 load_dotenv()
 
 st.set_page_config(page_title="Academic Agent", page_icon="🎓", layout="wide")
+
+require_login()
+inject_theme()
+
 st.title("🎓 Academic Agent")
 
 tool = st.sidebar.radio(
@@ -71,9 +76,11 @@ if tool == "Thesis Qualification Checker":
                 verdict = result.get("qualified", "Unknown")
                 pct = result.get("acceptance_percentage", 0)
 
-                m1, m2 = st.columns(2)
-                m1.metric("Verdict", verdict)
-                m2.metric("Acceptance", f"{pct}%")
+                gcol, vcol = st.columns([1, 1])
+                with gcol:
+                    render_gauge(pct, "Acceptance")
+                with vcol:
+                    st.metric("Verdict", verdict)
 
                 st.subheader("Full Report")
                 report_md = result.get("full_report_markdown", "")
@@ -118,10 +125,13 @@ else:
                 st.error(f"Grading failed: {exc}")
                 st.exception(exc)
             else:
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Score", f"{result.get('total_score')} / {result.get('max_score')}")
-                m2.metric("Percentage", f"{result.get('percentage')}%")
-                m3.metric("Result", "Passed" if result.get("passed") else "Failed")
+                gcol, scol, rcol = st.columns([1, 1, 1])
+                with gcol:
+                    render_gauge(result.get("percentage", 0), "Score")
+                with scol:
+                    st.metric("Score", f"{result.get('total_score')} / {result.get('max_score')}")
+                with rcol:
+                    st.metric("Result", "Passed" if result.get("passed") else "Failed")
 
                 st.subheader("Full Report")
                 report_md = result.get("full_report_markdown", "")
