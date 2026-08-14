@@ -1,4 +1,4 @@
-# Academic Agent
+# Bradford Academic Agent
 
 A Streamlit app with two AI-powered academic evaluation tools, backed by the
 Claude API.
@@ -86,6 +86,7 @@ Academic_Ai_agent/
 │   ├── thesis_evaluator.py  # Thesis qualification logic + prompt
 │   ├── exam_grader.py       # Exam grading logic + prompt
 │   └── ui.py                 # Theming/animation, login gate, percentage gauge
+├── assets/bradford_logo.png  # Header/login logo
 ├── api/index.py             # Vercel placeholder landing page (see note above)
 ├── vercel.json               # Routes all Vercel traffic to the placeholder
 ├── requirements.txt

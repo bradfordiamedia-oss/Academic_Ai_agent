@@ -1,10 +1,21 @@
 """Shared UI helpers: theming/animation, the login gate, and the percentage gauge."""
 from __future__ import annotations
 
+import base64
 import os
 import time
+from pathlib import Path
 
 import streamlit as st
+
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "bradford_logo.png"
+
+
+def _logo_data_uri() -> str | None:
+    if not _LOGO_PATH.exists():
+        return None
+    encoded = base64.b64encode(_LOGO_PATH.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 CUSTOM_CSS = """
 <style>
@@ -73,10 +84,16 @@ def require_login() -> None:
         return
 
     inject_theme()
+    logo_uri = _logo_data_uri()
+    logo_html = (
+        f'<img src="{logo_uri}" style="max-width:320px;width:100%;margin-bottom:1rem;" />'
+        if logo_uri
+        else '<div style="font-size:3.2rem;">🎓</div>'
+    )
     st.markdown(
-        """
-        <div style="max-width:420px;margin:10vh auto 0 auto;text-align:center;">
-          <div style="font-size:3.2rem;">🎓</div>
+        f"""
+        <div style="max-width:420px;margin:8vh auto 0 auto;text-align:center;">
+          {logo_html}
           <h1 style="margin-bottom:0.2rem;">Academic Agent</h1>
           <p style="opacity:0.65;">Enter the access password to continue</p>
         </div>

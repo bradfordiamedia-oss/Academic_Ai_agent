@@ -8,6 +8,8 @@ Two tools:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -18,12 +20,18 @@ from src.ui import inject_theme, render_gauge, require_login
 
 load_dotenv()
 
-st.set_page_config(page_title="Academic Agent", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="Bradford Academic Agent", page_icon="🎓", layout="wide")
 
 require_login()
 inject_theme()
 
-st.title("🎓 Academic Agent")
+LOGO_PATH = Path(__file__).resolve().parent / "assets" / "bradford_logo.png"
+
+logo_col, title_col = st.columns([1, 4])
+with logo_col:
+    st.image(str(LOGO_PATH), width=200)
+with title_col:
+    st.title("Academic Agent")
 
 tool = st.sidebar.radio(
     "Choose a tool",
