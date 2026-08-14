@@ -32,6 +32,11 @@ this exact shape:
 If marks per question are not specified in the answer key, assume each
 question is worth equal marks summing to 100. "passed" should reflect the
 passing threshold given to you in the user message.
+
+The output must be valid, strict JSON: escape every literal newline inside a
+string as \\n (never a raw line break), and escape any double quotes inside
+string values as \\". This applies especially to "full_report_markdown",
+which is long - make sure every line break in it is written as \\n.
 """
 
 USER_PROMPT_TEMPLATE = """EXAM QUESTIONS:

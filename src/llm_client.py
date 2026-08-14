@@ -71,4 +71,42 @@ def _parse_json(raw_text: str) -> dict:
         brace_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if brace_match:
             cleaned = brace_match.group(0)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # The model sometimes emits large free-text fields (the markdown report)
+        # with literal newlines/tabs inside a JSON string instead of properly
+        # escaping them, which breaks strict parsing. Repair and retry once.
+        return json.loads(_escape_raw_control_chars_in_strings(cleaned))
+
+
+def _escape_raw_control_chars_in_strings(text: str) -> str:
+    """Escape literal newline/tab/carriage-return characters found inside
+    JSON string literals, without touching whitespace outside strings."""
+    out = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if in_string:
+            if escape_next:
+                out.append(ch)
+                escape_next = False
+            elif ch == "\\":
+                out.append(ch)
+                escape_next = True
+            elif ch == '"':
+                out.append(ch)
+                in_string = False
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                out.append("\\r")
+            elif ch == "\t":
+                out.append("\\t")
+            else:
+                out.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+    return "".join(out)

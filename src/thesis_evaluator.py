@@ -27,6 +27,11 @@ this exact shape:
   "recommendations": ["<actionable fix>", ...],
   "full_report_markdown": "<complete standalone markdown report combining all of the above into readable sections with headings>"
 }
+
+The output must be valid, strict JSON: escape every literal newline inside a
+string as \\n (never a raw line break), and escape any double quotes inside
+string values as \\". This applies especially to "full_report_markdown",
+which is long - make sure every line break in it is written as \\n.
 """
 
 USER_PROMPT_TEMPLATE = """UNIVERSITY GUIDELINES:
