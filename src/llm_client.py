@@ -46,7 +46,7 @@ def call_json(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) 
     client = get_client()
     response = client.messages.create(
         model=model,
-        max_tokens=8192,
+        max_tokens=16000,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -58,6 +58,12 @@ def call_json(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) 
             f"The model returned no text (stop_reason={response.stop_reason!r}). "
             "This usually means the uploaded documents are too long for a single "
             "response - try shorter/trimmed documents."
+        )
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError(
+            "The model's response was cut off before it could finish (ran out of "
+            "output budget). Please try again - if it keeps happening, the "
+            "documents may be too long for a single evaluation."
         )
     return _parse_json(raw_text)
 
