@@ -24,6 +24,16 @@ def get_client() -> Anthropic:
             "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key "
             "locally, or set it in Streamlit Cloud's app secrets."
         )
+    api_key = api_key.strip()
+    try:
+        api_key.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY contains a character that isn't valid in an API key "
+            "(often caused by curly/smart quotes from a copy-paste, or another stray "
+            "character mixed into the value). Re-enter it in Streamlit Cloud's Secrets "
+            "using plain straight quotes and no extra text around it."
+        ) from exc
     return Anthropic(api_key=api_key)
 
 
