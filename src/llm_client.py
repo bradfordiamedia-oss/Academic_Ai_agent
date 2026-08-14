@@ -46,13 +46,19 @@ def call_json(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) 
     client = get_client()
     response = client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
     raw_text = "".join(
         block.text for block in response.content if getattr(block, "type", None) == "text"
     )
+    if not raw_text.strip():
+        raise RuntimeError(
+            f"The model returned no text (stop_reason={response.stop_reason!r}). "
+            "This usually means the uploaded documents are too long for a single "
+            "response - try shorter/trimmed documents."
+        )
     return _parse_json(raw_text)
 
 
