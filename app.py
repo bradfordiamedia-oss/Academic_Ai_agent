@@ -66,6 +66,7 @@ if tool == "Thesis Qualification Checker":
                 result = evaluate_thesis(guidelines_text, thesis_text)
             except Exception as exc:  # noqa: BLE001 - surface any failure to the user
                 st.error(f"Evaluation failed: {exc}")
+                st.exception(exc)
             else:
                 verdict = result.get("qualified", "Unknown")
                 pct = result.get("acceptance_percentage", 0)
@@ -115,6 +116,7 @@ else:
                 )
             except Exception as exc:  # noqa: BLE001 - surface any failure to the user
                 st.error(f"Grading failed: {exc}")
+                st.exception(exc)
             else:
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Score", f"{result.get('total_score')} / {result.get('max_score')}")
