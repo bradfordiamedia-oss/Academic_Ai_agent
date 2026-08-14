@@ -91,7 +91,7 @@ def _build_report_markdown(result: dict) -> str:
     ]
     for item in result.get("question_breakdown", []):
         lines.append(
-            f"- **Q{item.get('question_number', '?')}** "
+            f"- **Question {item.get('question_number', '?')}** "
             f"({item.get('marks_awarded', 0)}/{item.get('marks_possible', 0)}, "
             f"{item.get('verdict', '')}): {item.get('feedback', '')}"
         )
