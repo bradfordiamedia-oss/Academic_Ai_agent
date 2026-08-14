@@ -24,10 +24,11 @@ require_login()
 inject_theme()
 render_header("Academic Agent")
 
-tool = st.sidebar.radio(
+tool_choice = st.sidebar.radio(
     "Choose a tool",
-    ["Thesis Qualification Checker", "Exam Auto-Grader"],
+    ["🎓 Thesis Qualification Checker", "📝 Exam Auto-Grader"],
 )
+tool = tool_choice.split(" ", 1)[1]
 
 
 @st.cache_data(show_spinner=False)

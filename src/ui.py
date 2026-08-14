@@ -71,6 +71,44 @@ div[data-testid="stMetric"] {
     transition: transform 0.2s ease;
 }
 div[data-testid="stMetric"]:hover { transform: translateY(-2px); }
+
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #171a33 0%, #0b0d1a 100%);
+    border-right: 1px solid rgba(255,255,255,0.07);
+}
+section[data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.45);
+    font-weight: 600;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] {
+    gap: 0.6rem;
+    margin-top: 0.4rem;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 0.85rem 1rem !important;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+    cursor: pointer;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+    background: rgba(99,102,241,0.14);
+    border-color: rgba(129,140,248,0.5);
+    transform: translateX(3px);
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+    background: linear-gradient(90deg, rgba(99,102,241,0.28), rgba(168,85,247,0.16));
+    border-color: #818cf8;
+    box-shadow: 0 4px 14px rgba(99,102,241,0.25);
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label p {
+    font-size: 0.95rem;
+    font-weight: 500;
+}
 </style>
 <div id="ambient-bg">
   <div class="blob blob1"></div>
