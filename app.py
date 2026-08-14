@@ -47,10 +47,7 @@ def _grade_exam_cached(
     return grade_exam(questions_text, answer_key_text, student_answers_text, passing_threshold)
 
 
-def _read_upload(label: str, key: str):
-    uploaded = st.file_uploader(label, type=["pdf", "docx", "txt", "md"], key=key)
-    if uploaded is None:
-        return None
+def _read_one(uploaded) -> str | None:
     try:
         with st.spinner(f"Reading {uploaded.name}..."):
             text = _extract_cached(uploaded.getvalue(), uploaded.name)
@@ -66,6 +63,30 @@ def _read_upload(label: str, key: str):
         )
         return None
     return text
+
+
+def _read_upload(label: str, key: str):
+    uploaded = st.file_uploader(label, type=["pdf", "docx", "txt", "md"], key=key)
+    if uploaded is None:
+        return None
+    return _read_one(uploaded)
+
+
+def _read_uploads_multi(label: str, key: str):
+    """Like _read_upload, but accepts several files and combines them into one
+    document (e.g. a multi-page answer sheet scanned as separate files)."""
+    uploaded_files = st.file_uploader(
+        label, type=["pdf", "docx", "txt", "md"], key=key, accept_multiple_files=True
+    )
+    if not uploaded_files:
+        return None
+    parts = []
+    for uploaded in uploaded_files:
+        text = _read_one(uploaded)
+        if text is None:
+            return None
+        parts.append(f"--- {uploaded.name} ---\n{text}")
+    return "\n\n".join(parts)
 
 
 if tool == "Thesis Qualification Checker":
@@ -125,7 +146,7 @@ else:
     with col2:
         answer_key_text = _read_upload("Official answer key", "answer_key")
     with col3:
-        student_answers_text = _read_upload("Student's answers", "student_answers")
+        student_answers_text = _read_uploads_multi("Student's answers", "student_answers")
 
     ready = bool(questions_text and answer_key_text and student_answers_text)
     if st.button("Grade Submission", type="primary", disabled=not ready):
