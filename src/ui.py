@@ -17,6 +17,22 @@ def _logo_data_uri() -> str | None:
     encoded = base64.b64encode(_LOGO_PATH.read_bytes()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
+
+def render_header(title: str) -> None:
+    """Logo + page title in one flex row, vertically centered against each other."""
+    logo_uri = _logo_data_uri()
+    logo_html = f'<img src="{logo_uri}" style="height:56px;" />' if logo_uri else "🎓"
+    st.markdown(
+        f"""
+        <div style="display:flex; align-items:center; gap:1.25rem; margin: 0.5rem 0 1.5rem 0;">
+          {logo_html}
+          <h1 style="margin:0; line-height:1;">{title}</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 CUSTOM_CSS = """
 <style>
 @keyframes drift1 { 0% {transform: translate(0,0) scale(1);} 50% {transform: translate(40px,-30px) scale(1.15);} 100% {transform: translate(0,0) scale(1);} }
