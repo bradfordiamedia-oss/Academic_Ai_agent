@@ -84,6 +84,7 @@ Academic_Ai_agent/
 ├── api/index.py             # Vercel placeholder landing page (see note above)
 ├── vercel.json               # Routes all Vercel traffic to the placeholder
 ├── requirements.txt
+├── packages.txt              # apt package (tesseract-ocr) for scanned-PDF OCR
 └── .env.example
 ```
 
@@ -94,3 +95,11 @@ Academic_Ai_agent/
 - Grading/evaluation quality depends on how complete the uploaded guidelines
   and answer keys are — the more explicit the criteria, the more accurate
   the verdict.
+- Scanned/photographed PDFs (no real text layer) are handled via OCR
+  (Tesseract, through `pytesseract` + PyMuPDF) as a fallback when normal text
+  extraction finds nothing. This requires the `tesseract-ocr` system package —
+  already listed in `packages.txt` for Streamlit Cloud. Running locally, you
+  need Tesseract installed separately (e.g. `winget install UB-Mannheim.TesseractOCR`
+  on Windows, `apt install tesseract-ocr` on Linux, `brew install tesseract`
+  on macOS) for OCR to work; without it, the app still runs fine for
+  text-based PDFs/DOCX/TXT, just not scanned images.

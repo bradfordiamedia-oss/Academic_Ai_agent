@@ -26,6 +26,33 @@ def _extract_pdf(file_bytes: bytes) -> str:
             page_text = page.extract_text()
             if page_text:
                 text_parts.append(page_text)
+    text = "\n".join(text_parts)
+    if text.strip():
+        return text
+    # No embedded text layer (likely a scanned/photographed PDF) - fall back to OCR.
+    return _ocr_pdf(file_bytes)
+
+
+def _ocr_pdf(file_bytes: bytes) -> str:
+    try:
+        import pymupdf as fitz
+        import pytesseract
+        from PIL import Image
+    except ImportError:
+        return ""
+
+    text_parts = []
+    try:
+        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+            for page in pdf:
+                pixmap = page.get_pixmap(dpi=300)
+                image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+                page_text = pytesseract.image_to_string(image)
+                if page_text.strip():
+                    text_parts.append(page_text)
+    except Exception:
+        # OCR engine (Tesseract binary) unavailable or failed - degrade gracefully.
+        return ""
     return "\n".join(text_parts)
 
 
