@@ -8,6 +8,8 @@ Two tools:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -19,7 +21,8 @@ from src.ui import inject_theme, render_gauge, render_header, require_login
 
 load_dotenv()
 
-st.set_page_config(page_title="Bradford Academic Agent", page_icon="🎓", layout="wide")
+ICON_PATH = Path(__file__).resolve().parent / "assets" / "bradford_icon.png"
+st.set_page_config(page_title="Bradford Academic Agent", page_icon=str(ICON_PATH), layout="wide")
 
 require_login()
 inject_theme()
