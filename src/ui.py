@@ -113,6 +113,13 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label p {
 /* Hide Streamlit's own Fork/GitHub/menu toolbar (config.toml's toolbarMode
    handles most of it; this is a CSS fallback for anything it misses). */
 [data-testid="stToolbar"] { display: none !important; }
+
+/* Hide Streamlit Community Cloud's "Hosted with Streamlit" floating badge
+   (bottom-right corner) - only appears on the deployed app, not locally,
+   since it's injected by the hosting platform rather than our own code. */
+a[href="https://streamlit.io/cloud"],
+[class*="viewerBadge"],
+[class*="profileContainer"] { display: none !important; }
 </style>
 <div id="ambient-bg">
   <div class="blob blob1"></div>
