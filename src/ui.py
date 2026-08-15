@@ -109,6 +109,10 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label p {
     font-size: 0.95rem;
     font-weight: 500;
 }
+
+/* Hide Streamlit's own Fork/GitHub/menu toolbar (config.toml's toolbarMode
+   handles most of it; this is a CSS fallback for anything it misses). */
+[data-testid="stToolbar"] { display: none !important; }
 </style>
 <div id="ambient-bg">
   <div class="blob blob1"></div>
