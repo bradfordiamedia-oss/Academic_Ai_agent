@@ -18,6 +18,7 @@ from src.document_parser import extract_text
 from src.exam_grader import grade_exam
 from src.feedback_pdf import build_feedback_pdf
 from src.pdf_export import markdown_to_pdf_bytes
+from src.support_files import describe_support_file
 from src.thesis_evaluator import evaluate_thesis
 from src.ui import inject_theme, render_gauge, render_header, require_login
 
@@ -42,11 +43,24 @@ def _extract_cached(file_bytes: bytes, filename: str, page_markers: bool = False
     return extract_text(file_bytes, filename, page_markers)
 
 
+@st.cache_data(show_spinner=False)
+def _describe_cached(file_bytes: bytes, filename: str) -> str:
+    return describe_support_file(file_bytes, filename)
+
+
 @st.cache_data(show_spinner="Writing the detailed feedback report (this can take a minute)...")
 def _evaluate_thesis_cached(
-    guidelines_text: str, thesis_text: str, student_name: str, student_id: str, module: str
+    guidelines_text: str,
+    thesis_text: str,
+    student_name: str,
+    student_id: str,
+    module: str,
+    supporting: str,
+    supporting_names: tuple,
 ) -> dict:
-    return evaluate_thesis(guidelines_text, thesis_text, student_name, student_id, module)
+    return evaluate_thesis(
+        guidelines_text, thesis_text, student_name, student_id, module, supporting, supporting_names
+    )
 
 
 def _file_slug(text: str) -> str:
@@ -85,6 +99,41 @@ def _read_upload(label: str, key: str, page_markers: bool = False):
     return _read_one(uploaded, page_markers)
 
 
+THESIS_FILE_TYPES = ["pdf", "docx", "txt", "md", "csv", "xlsx", "ok", "settings", "splsm", "json"]
+MAX_THESIS_FILES = 10
+
+
+def _read_thesis_files(label: str, key: str):
+    """Up to 10 files: the thesis itself (PDF/DOCX) plus any data/model files
+    (e.g. SmartPLS .txt/.ok/.settings/.splsm, CSV, Excel). Returns
+    (thesis_text, supporting_summaries, supporting_names)."""
+    files = st.file_uploader(
+        label, type=THESIS_FILE_TYPES, key=key, accept_multiple_files=True,
+        help=f"Up to {MAX_THESIS_FILES} files: the thesis (PDF or DOCX) plus any data or model files.",
+    )
+    if not files:
+        return None, "", ()
+    if len(files) > MAX_THESIS_FILES:
+        st.error(f"Please upload at most {MAX_THESIS_FILES} files (you added {len(files)}).")
+        return None, "", ()
+    mains = [f for f in files if f.name.lower().endswith((".pdf", ".docx"))]
+    if not mains:
+        st.warning("Include the thesis itself (a PDF or DOCX) among the files.")
+        return None, "", ()
+
+    single_pdf = len(mains) == 1 and mains[0].name.lower().endswith(".pdf")
+    parts = []
+    for main in mains:
+        text = _read_one(main, page_markers=single_pdf)
+        if text is None:
+            return None, "", ()
+        parts.append(text if len(mains) == 1 else f"=== {main.name} ===\n{text}")
+
+    others = [f for f in files if f not in mains]
+    summaries = [_describe_cached(f.getvalue(), f.name) for f in others]
+    return "\n\n".join(parts), "\n\n".join(summaries), tuple(f.name for f in others)
+
+
 def _read_uploads_multi(label: str, key: str):
     """Like _read_upload, but accepts several files and combines them into one
     document (e.g. a multi-page answer sheet scanned as separate files)."""
@@ -115,7 +164,9 @@ if tool == "Thesis Qualification Checker":
     with col1:
         guidelines_text = _read_upload("University guidelines", "guidelines")
     with col2:
-        thesis_text = _read_upload("Thesis document", "thesis", page_markers=True)
+        thesis_text, supporting_text, supporting_names = _read_thesis_files(
+            "Thesis document (+ up to 9 data/model files)", "thesis"
+        )
 
     with st.expander("Report details (optional)"):
         st.caption("Leave blank to use what the agent finds on the thesis cover page.")
@@ -127,7 +178,8 @@ if tool == "Thesis Qualification Checker":
     if st.button("Evaluate Thesis", type="primary", disabled=not (guidelines_text and thesis_text)):
         try:
             result = _evaluate_thesis_cached(
-                guidelines_text, thesis_text, student_name.strip(), student_id.strip(), module.strip()
+                guidelines_text, thesis_text, student_name.strip(), student_id.strip(), module.strip(),
+                supporting_text, supporting_names,
             )
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             st.error(f"Evaluation failed: {exc}")

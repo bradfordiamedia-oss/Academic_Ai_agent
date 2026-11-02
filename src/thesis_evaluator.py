@@ -66,6 +66,10 @@ STEP 3 - EVIDENCE
   printed in the thesis, stated as a factual inconsistency to check; (b) in-text citations missing
   from the reference list or the reverse; (c) incomplete reference entries. Always tell the
   student to verify such points against the sources.
+- SUPPORTING FILES: when summaries of data or model files are supplied, cross-check them with
+  the thesis (case counts, scale ranges, means) and report mismatches as findings or "checks".
+  State them as facts from the files - they cannot be quoted - and claim no check beyond what
+  the summaries show (for example, you cannot re-run the analysis).
 - ACKNOWLEDGED ISSUES: before saying the thesis fails to state, explain or disclose something,
   search the thesis for it. If the thesis already says it (in a note, a limitations section or an
   interpretation paragraph), credit that and report only what is still wrong - for example a
@@ -135,8 +139,15 @@ SUBMITTED THESIS:
 ---
 {thesis}
 ---
-
+{supporting_block}
 Write the detailed feedback JSON described in your instructions."""
+
+SUPPORTING_BLOCK = """
+SUPPORTING FILES SUBMITTED WITH THE THESIS (summaries computed by the system):
+---
+{supporting}
+---
+"""
 
 _EMPTY_VALUES = {"", "unknown", "n/a", "na", "none", "not stated", "not provided", "not specified"}
 
@@ -147,6 +158,8 @@ def evaluate_thesis(
     student_name: str = "",
     student_id: str = "",
     module: str = "",
+    supporting: str = "",
+    supporting_names: tuple = (),
 ) -> dict:
     facts = _submission_facts(thesis_text)
     prompt = USER_PROMPT_TEMPLATE.format(
@@ -156,9 +169,11 @@ def evaluate_thesis(
         words=f"{facts['words']:,}",
         pages=facts["pages"] if facts["pages"] else "not available (not a PDF)",
         thesis=thesis_text.strip(),
+        supporting_block=SUPPORTING_BLOCK.format(supporting=supporting.strip()) if supporting.strip() else "",
     )
     raw = call_json(SYSTEM_PROMPT, prompt)
     result = _finalize(raw, thesis_text, facts, student_name, student_id, module)
+    result["supporting_names"] = list(supporting_names)
     result["full_report_markdown"] = _build_report_markdown(result)
     return result
 

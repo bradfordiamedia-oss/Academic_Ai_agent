@@ -229,12 +229,23 @@ def build_feedback_pdf(result: dict) -> bytes:
     )
     pdf.ln(3.5)
 
+    supporting = result.get("supporting_names") or []
+    if supporting:
+        scope = (
+            "Checks were made on the submitted text, the assessment guidelines and summaries of the "
+            f"supporting files you submitted ({', '.join(supporting)}). The analysis was not re-run, and "
+            "whether cited works exist and similarity (Turnitin) results were not checked."
+        )
+    else:
+        scope = (
+            "Checks were made on the submitted text and the assessment guidelines only: whether cited works "
+            "exist, similarity (Turnitin) results and any raw data files were not checked."
+        )
     pdf.para(
         f"This report explains each mark on the {result['rubric_name']} rubric. Marks use the European "
         f"Credit Transfer and Accumulation System (ECTS) scale of {inst['short']}. Quotes are taken from "
         f"your submitted {_document_word(result['source_label'])} and were checked against its text. "
-        "Checks were made on the submitted text and the assessment guidelines only: whether cited works "
-        "exist, similarity (Turnitin) results and any raw data files were not checked."
+        + scope
     )
 
     # 1. Summary of marks
