@@ -1,109 +1,444 @@
-"""Feature 1: check a thesis against university guidelines."""
+"""Feature 1: examine a thesis against its assessment guidelines and produce a
+"Detailed Feedback" report (rubric marks, integrity findings, evidence quotes,
+fix list).
+
+The model supplies judgement and evidence only. Everything checkable is done
+here in code: contributions and the weighted total, the grading-scale band,
+page numbers, and verification that every quote really appears in the thesis.
+"""
 from __future__ import annotations
 
+import re
+from bisect import bisect_right
+
+from src import report_template as tpl
 from src.llm_client import call_json
 
-SYSTEM_PROMPT = """You are a rigorous but fair university thesis examiner.
-You compare a submitted thesis against the official university guidelines it
-must comply with, and decide whether it qualifies for submission/defense.
+PAGE_MARKER = re.compile(r"\[\[Page (\d+)\]\]")
 
-Evaluate against the guidelines on dimensions such as: required structure and
-sections, formatting rules, methodology soundness, citation/referencing
-requirements, scope and originality, and any explicit pass/fail criteria
-stated in the guidelines. If the guidelines do not mention a dimension, judge
-it using standard academic norms but weight it lower.
+_SYSTEM_TEMPLATE = """You are an experienced university thesis examiner writing a DETAILED FEEDBACK report.
+You receive the official assessment guidelines (usually containing a marking rubric) and the
+submitted thesis text. Compare the thesis with the rubric, mark each criterion, and back every
+judgement with evidence from the thesis.
 
-WEIGHT ISSUES BY SEVERITY - do not average every deviation equally:
-- Minor/cosmetic gaps (a missing List of Tables, slightly under a soft word
-  count target, small formatting inconsistencies, a few citation format
-  slips) should cost only a few points each, not tank the score.
-- Fundamental gaps (no methodology section, no literature review, missing a
-  hard pass/fail requirement stated in the guidelines, far below a REQUIRED
-  minimum, evidence of fabricated or absent data) should weigh heavily.
-A thesis with several minor issues but a sound core (clear methodology,
-adequate citations, coherent argument) should still score in the 70s-80s,
-not the 30s - reserve scores below 50 for theses with genuinely fundamental,
-not cosmetic, problems.
+The thesis text may contain lines like [[Page 12]]. They only mark PDF pages for the system and
+are not part of the thesis. Never quote them and never state page numbers yourself - the system
+adds verified page numbers to your quotes.
 
-Use this rubric for acceptance_percentage, and keep "qualified" consistent
-with it:
-- 90-100 ("Qualified"): Fully compliant, or only trivial nitpicks.
-- 75-89 ("Qualified"): Sound overall with minor, easily-fixed gaps.
-- 50-74 ("Conditionally Qualified"): Several real gaps or one significant
-  gap, but the core work is salvageable with revision.
-- 25-49 ("Not Qualified"): Multiple fundamental gaps requiring major rework.
-- 0-24 ("Not Qualified"): Does not meet the basic requirements at all.
+STEP 1 - RUBRIC
+Use the criteria and percentage weights of the marking rubric in the guidelines (the guidelines
+may be OCR text with a garbled table). If they contain no readable rubric or weights, use this
+default rubric:
+{{RUBRIC}}
+Weights must add up to 100.
 
-You must respond with ONLY a single JSON object (no prose outside it) with
-this exact shape:
+STEP 2 - MARKS
+Give each criterion a whole-number mark from 0 to 100, calibrated to this European scale, where
+60 is already a very good mark and 90+ is rare:
+{{SCALE}}
+Weight issues by severity; do not average every deviation equally:
+- Minor or cosmetic gaps (a few formatting slips, small inconsistencies) cost only a few points.
+- Fundamental gaps (a required section missing, far outside a REQUIRED word count, no real method
+  or analysis, results that cannot be trusted) weigh heavily on the criteria they affect.
+- Integrity problems visible in the text keep the affected criteria low (usually Methodology,
+  Data Analysis, Conclusion, Citations): tables that contradict the prose or each other,
+  identical or copied result rows, a method still written in the future tense in a finished
+  thesis, a scale described one way and reported another, a name or title that differs between
+  cover, declaration and certificate, in-text citations missing from the reference list or the
+  reverse.
+- Judge only what the thesis says - never the author's name, nationality or institution.
+A thesis with a sound core and only minor gaps should score in the 70s-80s on those criteria.
+
+STEP 3 - EVIDENCE
+- Copy every quote EXACTLY from the thesis text, on one line, at most 60 words. To join separate
+  parts of one passage use " ... ". Never quote the guidelines. If you cannot find an exact quote
+  for a point, leave the quote out instead of paraphrasing it.
+- For each quote give "section": the heading or number it sits under (for example
+  "Section 1.4 Key Research Question", "Table 18 Hypotheses testing", "Abstract").
+- Never invent figures, tables, references or quotes. Report only what can be checked in the
+  supplied text.
+- You cannot check whether a cited work really exists, a Turnitin similarity score, or raw data
+  files, and you must never claim you did.
+- REFERENCES: your own knowledge ends before today's date (given in SUBMISSION FACTS), so recent
+  publication years are never evidence of a problem. Never call a reference fabricated, fake or
+  impossible, never accuse the student of misconduct, and never treat any year up to today's year
+  as suspicious. You may flag only: (a) a reference dated later than a submission date that is
+  printed in the thesis, stated as a factual inconsistency to check; (b) in-text citations missing
+  from the reference list or the reverse; (c) incomplete reference entries. Always tell the
+  student to verify such points against the sources.
+- Use the word count and page count from SUBMISSION FACTS. Do not guess lengths.
+
+OUTPUT
+Respond with ONLY one JSON object (no prose outside it) of this shape:
 {
-  "qualified": "Qualified" | "Conditionally Qualified" | "Not Qualified",
-  "acceptance_percentage": <integer 0-100>,
-  "summary": "<2-4 sentence overall verdict>",
-  "criteria_breakdown": [
-    {"criterion": "<name>", "score_percentage": <0-100>, "comments": "<why, 1-2 sentences>"}
+  "student_name": "<name on the cover/declaration, or empty string>",
+  "student_id": "<only if printed in the thesis, else empty string>",
+  "module": "<module name/code only if printed in the thesis, else empty string>",
+  "thesis_title": "<exact title>",
+  "programme_level": "Doctoral" | "Master's" | "Bachelor's" | "",
+  "rubric_name": "<name of the rubric / assessment brief, e.g. Doctorate Thesis Assessment Brief>",
+  "criteria": [
+    {
+      "name": "<criterion name>",
+      "weight": <percent>,
+      "mark": <integer 0-100>,
+      "why": "<2-3 sentences: why this mark>",
+      "strength": "<1-2 sentences>",
+      "quotes": [{"text": "<exact quote>", "section": "<where it sits>"}],
+      "holds_down": "<2-3 sentences: what holds the mark down and the concrete fix>",
+      "checks": ["<specific fact verified in the text, optional, at most 4>"]
+    }
   ],
-  "strengths": ["<point>", ...],
-  "weaknesses": ["<point>", ...],
-  "recommendations": ["<actionable fix>", ...]
+  "integrity_findings": [
+    {"title": "<short title>", "detail": "<2-3 sentences>",
+     "quotes": [{"text": "<exact quote>", "section": "<where it sits>"}]}
+  ],
+  "fix_list": ["<concrete action, most important first>"]
 }
-
-Keep every text field concise (comments and points are 1-2 sentences each,
-not paragraphs) - this is a structured breakdown, not a full essay. The
-output must be valid, strict JSON: escape every literal newline inside a
-string as \\n (never a raw line break), and escape any double quotes inside
-string values as \\".
+Write plainly and directly to the student ("You state ..."). Use 0-2 quotes per criterion and 0-6
+integrity findings (an empty list if there are none). "checks" must hold only specific facts with
+numbers or locations that you verified in the text (for example "Table 13 means run from 4.43 to
+5.75 although the text states a 1-5 scale"); never write yes/no checklist items, and use an empty
+list when there is nothing specific. "fix_list" has 6-10 distinct actions, most important first,
+each naming the chapter, section or table to change; never repeat an action. The output must be
+valid, strict JSON: escape double quotes inside strings as \\" and never put a raw line break
+inside a string.
 """
 
-USER_PROMPT_TEMPLATE = """UNIVERSITY GUIDELINES:
+SYSTEM_PROMPT = _SYSTEM_TEMPLATE.replace("{{RUBRIC}}", tpl.rubric_text_for_prompt()).replace(
+    "{{SCALE}}", tpl.scale_text_for_prompt()
+)
+
+USER_PROMPT_TEMPLATE = """ASSESSMENT GUIDELINES:
 ---
 {guidelines}
 ---
+
+SUBMISSION FACTS (computed by the system):
+- Today's date: {today}
+- Document type: {label}
+- Word count (whole file, including front matter and references): about {words}
+- Pages: {pages}
 
 SUBMITTED THESIS:
 ---
 {thesis}
 ---
 
-Evaluate the thesis against the guidelines and respond with the JSON object
-described in your instructions."""
+Write the detailed feedback JSON described in your instructions."""
+
+_EMPTY_VALUES = {"", "unknown", "n/a", "na", "none", "not stated", "not provided", "not specified"}
 
 
-def evaluate_thesis(guidelines_text: str, thesis_text: str) -> dict:
+def evaluate_thesis(
+    guidelines_text: str,
+    thesis_text: str,
+    student_name: str = "",
+    student_id: str = "",
+    module: str = "",
+) -> dict:
+    facts = _submission_facts(thesis_text)
     prompt = USER_PROMPT_TEMPLATE.format(
         guidelines=guidelines_text.strip(),
+        today=tpl.format_date(),
+        label=facts["label"],
+        words=f"{facts['words']:,}",
+        pages=facts["pages"] if facts["pages"] else "not available (not a PDF)",
         thesis=thesis_text.strip(),
     )
-    result = call_json(SYSTEM_PROMPT, prompt)
+    raw = call_json(SYSTEM_PROMPT, prompt)
+    result = _finalize(raw, thesis_text, facts, student_name, student_id, module)
     result["full_report_markdown"] = _build_report_markdown(result)
     return result
 
 
-def _build_report_markdown(result: dict) -> str:
-    lines = [
-        "# Thesis Evaluation Report",
-        "",
-        f"**Qualification Status:** {result.get('qualified', 'Unknown')}",
-        f"**Acceptance Percentage:** {result.get('acceptance_percentage', 0)}%",
-        "",
-        "## Summary",
-        result.get("summary", ""),
-        "",
-        "## Criteria Breakdown",
-    ]
-    for item in result.get("criteria_breakdown", []):
-        lines.append(
-            f"- **{item.get('criterion', '')}** "
-            f"({item.get('score_percentage', 0)}%): {item.get('comments', '')}"
+def _submission_facts(thesis_text: str) -> dict:
+    clean = PAGE_MARKER.sub(" ", thesis_text)
+    pages = len(PAGE_MARKER.findall(thesis_text))
+    return {
+        "label": "Thesis PDF" if pages else "Thesis document",
+        "words": len(re.findall(r"\w+", clean)),
+        "pages": pages or None,
+    }
+
+
+# ---------------------------------------------------------------- finalizing
+
+
+def _finalize(raw: dict, thesis_text: str, facts: dict, student_name: str, student_id: str, module: str) -> dict:
+    items = raw.get("criteria") if isinstance(raw, dict) else None
+    if not isinstance(items, list) or not items:
+        raise RuntimeError(
+            "The model did not return a marking rubric for this thesis. "
+            "Please try again; if it keeps happening, check that the guidelines file is readable."
         )
 
-    lines += ["", "## Strengths"]
-    lines += [f"- {point}" for point in result.get("strengths", [])] or ["- None noted."]
+    locator = _QuoteLocator(thesis_text)
+    dropped = 0
+    criteria = []
+    for item in items:
+        if not isinstance(item, dict) or not _s(item.get("name")):
+            continue
+        quotes, lost = _verify_quotes(item.get("quotes"), locator, facts, limit=2)
+        dropped += lost
+        criteria.append(
+            {
+                "name": _s(item.get("name")),
+                "weight": max(_num(item.get("weight")), 0.0),
+                "mark": max(0, min(100, int(round(_num(item.get("mark")))))),
+                "why": _s(item.get("why")),
+                "strength": _s(item.get("strength")),
+                "quotes": quotes,
+                "holds_down": _s(item.get("holds_down")),
+                "checks": [_s(c) for c in _as_list(item.get("checks")) if _s(c)][:5],
+            }
+        )
+    if not criteria:
+        raise RuntimeError("The model returned no usable criteria. Please try again.")
 
-    lines += ["", "## Weaknesses"]
-    lines += [f"- {point}" for point in result.get("weaknesses", [])] or ["- None noted."]
+    weights_normalized = _normalize_weights(criteria)
+    total = 0.0
+    for criterion in criteria:
+        criterion["contribution"] = round(criterion["mark"] * criterion["weight"] / 100, 1)
+        total += criterion["contribution"]
+    total = round(total, 1)
+    overall = int(total + 0.5)
 
-    lines += ["", "## Recommendations"]
-    lines += [f"- {point}" for point in result.get("recommendations", [])] or ["- None noted."]
+    findings = []
+    for finding in _as_list(raw.get("integrity_findings")):
+        if not isinstance(finding, dict) or not _s(finding.get("title")):
+            continue
+        quotes, lost = _verify_quotes(finding.get("quotes"), locator, facts, limit=3)
+        dropped += lost
+        findings.append({"title": _s(finding.get("title")), "detail": _s(finding.get("detail")), "quotes": quotes})
 
+    level_word = _level_word(raw.get("programme_level"))
+    band = tpl.band_for(overall)
+    pass_mark = tpl.PASS_MARK
+    scale_rows = [
+        {
+            "label": b["label"],
+            "range": tpl.band_range_text(b),
+            "meaning": tpl.band_meaning(b, level_word),
+            "current": b is band,
+        }
+        for b in tpl.DEFAULT_SCALE
+    ]
+
+    result = {
+        "student": {
+            "name": _optional(student_name) or _optional(raw.get("student_name")),
+            "id": _optional(student_id) or _optional(raw.get("student_id")),
+            "module": _optional(module) or _optional(raw.get("module")),
+            "title": _optional(raw.get("thesis_title")),
+            "level_word": level_word,
+        },
+        "date": tpl.format_date(),
+        "report_title": f"{level_word.upper()} THESIS DETAILED FEEDBACK" if level_word else "THESIS DETAILED FEEDBACK",
+        "rubric_name": _optional(raw.get("rubric_name")) or "assessment brief",
+        "source_label": facts["label"],
+        "stats": {"words": facts["words"], "pages": facts["pages"]},
+        "criteria": criteria,
+        "weights_normalized": weights_normalized,
+        "total": total,
+        "overall_mark": overall,
+        "classification": band["label"],
+        "pass_mark": pass_mark,
+        "passed": overall >= pass_mark,
+        "integrity_findings": findings,
+        "fix_list": [_s(x) for x in _as_list(raw.get("fix_list")) if _s(x)][:14],
+        "scale": scale_rows,
+        "quotes_dropped": dropped,
+    }
+    # Names the rest of the app already uses.
+    result["acceptance_percentage"] = overall
+    result["qualified"] = band["label"]
+    return result
+
+
+def _normalize_weights(criteria: list[dict]) -> bool:
+    total = sum(c["weight"] for c in criteria)
+    if total <= 0:
+        for c in criteria:
+            c["weight"] = round(100 / len(criteria), 1)
+        return True
+    if abs(total - 100) > 0.5:
+        for c in criteria:
+            c["weight"] = round(c["weight"] * 100 / total, 1)
+        return True
+    return False
+
+
+def _s(value) -> str:
+    return " ".join(str(value).split()) if isinstance(value, (str, int, float)) else ""
+
+
+def _optional(value) -> str:
+    text = _s(value)
+    return "" if text.lower() in _EMPTY_VALUES else text
+
+
+def _as_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _num(value) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
+    return float(match.group()) if match else 0.0
+
+
+def _level_word(value) -> str:
+    text = _s(value).lower()
+    if "doctor" in text:
+        return "doctoral"
+    if "master" in text:
+        return "master's"
+    if "bachelor" in text or "undergrad" in text:
+        return "bachelor's"
+    return ""
+
+
+# ------------------------------------------------------------- quote checking
+
+
+def _alnum(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text.lower())
+
+
+class _QuoteLocator:
+    """Finds a quote in the thesis ignoring spacing, punctuation and line wraps,
+    and reports the PDF page it starts on."""
+
+    _SPLIT = re.compile(r"\s*(?:\[\s*\.\.\.\s*\]|\.\.\.|…)\s*")
+    _MIN_FRAGMENT = 12
+
+    def __init__(self, text: str):
+        pieces = PAGE_MARKER.split(text)
+        chunks = [(None, pieces[0])] + [
+            (int(pieces[i]), pieces[i + 1]) for i in range(1, len(pieces) - 1, 2)
+        ]
+        parts, self._starts, self._pages = [], [], []
+        offset = 0
+        for page, chunk in chunks:
+            normalized = _alnum(chunk)
+            if not normalized:
+                continue
+            self._starts.append(offset)
+            self._pages.append(page)
+            parts.append(normalized)
+            offset += len(normalized)
+        self._norm = "".join(parts)
+
+    def locate(self, quote: str):
+        fragments = [_alnum(f) for f in self._SPLIT.split(quote)]
+        fragments = [f for f in fragments if len(f) >= self._MIN_FRAGMENT]
+        if not fragments:
+            return False, None
+        first = None
+        for fragment in fragments:
+            position = self._norm.find(fragment)
+            if position < 0:
+                return False, None
+            if first is None:
+                first = position
+        index = bisect_right(self._starts, first) - 1
+        return True, self._pages[index] if index >= 0 else None
+
+
+def _verify_quotes(quotes, locator: _QuoteLocator, facts: dict, limit: int):
+    verified, dropped = [], 0
+    for quote in _as_list(quotes):
+        if isinstance(quote, str):
+            quote = {"text": quote, "section": ""}
+        if not isinstance(quote, dict):
+            continue
+        text = _s(quote.get("text"))
+        found, page = locator.locate(text) if text else (False, None)
+        if not found:
+            dropped += 1
+            continue
+        verified.append({"text": text, "source": _source_label(facts["label"], page, _s(quote.get("section")))})
+    return verified[:limit], dropped
+
+
+def _source_label(label: str, page, section: str) -> str:
+    parts = [label]
+    if page:
+        parts.append(f"page {page}")
+    if section:
+        parts.append(section)
+    return ", ".join(parts)
+
+
+# ------------------------------------------------------------ on-screen report
+
+
+def _build_report_markdown(result: dict) -> str:
+    student = result["student"]
+    level_word = student["level_word"]
+    heading_prefix = f"{level_word[0].upper() + level_word[1:]} " if level_word else ""
+    lines = [
+        f"# {heading_prefix}Thesis Detailed Feedback",
+        "",
+        f"**Student:** {student['name'] or 'Not stated'}  ",
+        f"**Thesis title:** {student['title'] or 'Not stated'}  ",
+        f"**Date of feedback:** {result['date']}  ",
+        f"**Overall mark:** {result['overall_mark']}% | {result['classification']}",
+        "",
+        "## 1. Summary of Marks",
+        "",
+        "| No. | Criterion | Weight | Mark | Contribution |",
+        "|---|---|---|---|---|",
+    ]
+    for i, c in enumerate(result["criteria"], 1):
+        lines.append(f"| {i} | {c['name']} | {c['weight']:g}% | {c['mark']}% | {c['contribution']:.1f} |")
+    lines.append(f"| | **Weighted total** | 100% | **{result['overall_mark']}%** | **{result['total']:.1f}** |")
+    lines += [
+        "",
+        f"**Classification: {result['classification']}**",
+        "",
+        "*Contribution = Mark x Weight / 100.*",
+    ]
+    if result["weights_normalized"]:
+        lines.append("*The stated weights did not add up to 100 and were scaled proportionally.*")
+
+    lines += ["", "## 2. Integrity Findings"]
+    if result["integrity_findings"]:
+        for i, finding in enumerate(result["integrity_findings"], 1):
+            lines += ["", f"### 2.{i} {finding['title']}", finding["detail"]]
+            lines += _quote_lines(finding["quotes"])
+    else:
+        lines += ["", "No integrity problems were found in the submitted text."]
+
+    lines += ["", "## 3. Criterion-by-Criterion Feedback"]
+    for i, c in enumerate(result["criteria"], 1):
+        lines += ["", f"### Criterion {i}. {c['name']} - {c['mark']}% (Weight {c['weight']:g}%)"]
+        if c["why"]:
+            lines += [f"**Why {c['mark']}%.** {c['why']}", ""]
+        if c["strength"]:
+            lines += [f"**Strength.** {c['strength']}", ""]
+        lines += _quote_lines(c["quotes"])
+        if c["checks"]:
+            lines += [f"- {check}" for check in c["checks"]] + [""]
+        if c["holds_down"]:
+            lines += [f"**What holds the mark down.** {c['holds_down']}"]
+
+    heading = "What to Fix to Reach a Pass" if not result["passed"] else "Recommended Improvements"
+    lines += ["", f"## 4. {heading}"]
+    lines += [f"{i}. {item}" for i, item in enumerate(result["fix_list"], 1)]
+
+    lines += ["", "## 5. Grading Scale", "", "| Classification | Mark range | Meaning |", "|---|---|---|"]
+    for row in result["scale"]:
+        name = f"**{row['label']}**" if row["current"] else row["label"]
+        lines.append(f"| {name} | {row['range']} | {row['meaning']} |")
+    lines += ["", f"**Your current band: {result['overall_mark']}%.**"]
     return "\n".join(lines)
+
+
+def _quote_lines(quotes: list[dict]) -> list[str]:
+    out = []
+    for quote in quotes:
+        out += [f"> *\"{quote['text']}\"*", ">", f"> Source: {quote['source']}", ""]
+    return out

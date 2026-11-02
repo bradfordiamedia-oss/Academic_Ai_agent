@@ -8,6 +8,7 @@ Two tools:
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import streamlit as st
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 
 from src.document_parser import extract_text
 from src.exam_grader import grade_exam
+from src.feedback_pdf import build_feedback_pdf
 from src.pdf_export import markdown_to_pdf_bytes
 from src.thesis_evaluator import evaluate_thesis
 from src.ui import inject_theme, render_gauge, render_header, require_login
@@ -36,13 +38,19 @@ tool = tool_choice.split(" ", 1)[1]
 
 
 @st.cache_data(show_spinner=False)
-def _extract_cached(file_bytes: bytes, filename: str) -> str:
-    return extract_text(file_bytes, filename)
+def _extract_cached(file_bytes: bytes, filename: str, page_markers: bool = False) -> str:
+    return extract_text(file_bytes, filename, page_markers)
 
 
-@st.cache_data(show_spinner="Evaluating thesis against guidelines...")
-def _evaluate_thesis_cached(guidelines_text: str, thesis_text: str) -> dict:
-    return evaluate_thesis(guidelines_text, thesis_text)
+@st.cache_data(show_spinner="Writing the detailed feedback report (this can take a minute)...")
+def _evaluate_thesis_cached(
+    guidelines_text: str, thesis_text: str, student_name: str, student_id: str, module: str
+) -> dict:
+    return evaluate_thesis(guidelines_text, thesis_text, student_name, student_id, module)
+
+
+def _file_slug(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-") or "Thesis"
 
 
 @st.cache_data(show_spinner="Grading submission...")
@@ -52,10 +60,10 @@ def _grade_exam_cached(
     return grade_exam(questions_text, answer_key_text, student_answers_text, passing_threshold)
 
 
-def _read_one(uploaded) -> str | None:
+def _read_one(uploaded, page_markers: bool = False) -> str | None:
     try:
         with st.spinner(f"Reading {uploaded.name}..."):
-            text = _extract_cached(uploaded.getvalue(), uploaded.name)
+            text = _extract_cached(uploaded.getvalue(), uploaded.name, page_markers)
     except Exception as exc:  # noqa: BLE001 - surface any failure to the user
         st.error(f"Couldn't read {uploaded.name}: {exc}")
         return None
@@ -70,11 +78,11 @@ def _read_one(uploaded) -> str | None:
     return text
 
 
-def _read_upload(label: str, key: str):
+def _read_upload(label: str, key: str, page_markers: bool = False):
     uploaded = st.file_uploader(label, type=["pdf", "docx", "txt", "md"], key=key)
     if uploaded is None:
         return None
-    return _read_one(uploaded)
+    return _read_one(uploaded, page_markers)
 
 
 def _read_uploads_multi(label: str, key: str):
@@ -97,43 +105,55 @@ def _read_uploads_multi(label: str, key: str):
 if tool == "Thesis Qualification Checker":
     st.header("Thesis Qualification Checker")
     st.write(
-        "Upload your university's thesis guidelines and the thesis document. "
-        "The agent checks compliance and returns a qualification verdict, an "
-        "acceptance percentage, and a full report."
+        "Upload your university's thesis guidelines (with its marking rubric) and the thesis. "
+        "The agent marks every rubric criterion, flags integrity problems, backs each point with "
+        "verified quotes and page numbers, and produces a Detailed Feedback report you can "
+        "download as a PDF."
     )
 
     col1, col2 = st.columns(2)
     with col1:
         guidelines_text = _read_upload("University guidelines", "guidelines")
     with col2:
-        thesis_text = _read_upload("Thesis document", "thesis")
+        thesis_text = _read_upload("Thesis document", "thesis", page_markers=True)
+
+    with st.expander("Report details (optional)"):
+        st.caption("Leave blank to use what the agent finds on the thesis cover page.")
+        dcol1, dcol2, dcol3 = st.columns(3)
+        student_name = dcol1.text_input("Student name")
+        student_id = dcol2.text_input("ID number")
+        module = dcol3.text_input("Module name / code")
 
     if st.button("Evaluate Thesis", type="primary", disabled=not (guidelines_text and thesis_text)):
         try:
-            result = _evaluate_thesis_cached(guidelines_text, thesis_text)
+            result = _evaluate_thesis_cached(
+                guidelines_text, thesis_text, student_name.strip(), student_id.strip(), module.strip()
+            )
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             st.error(f"Evaluation failed: {exc}")
             st.exception(exc)
         else:
-            verdict = result.get("qualified", "Unknown")
-            pct = result.get("acceptance_percentage", 0)
-
             gcol, vcol = st.columns([1, 1])
             with gcol:
-                render_gauge(pct, "Acceptance")
+                render_gauge(result["overall_mark"], "Overall mark")
             with vcol:
-                st.metric("Verdict", verdict)
+                st.metric("Classification", result["classification"])
+                st.download_button(
+                    "Download Detailed Feedback (PDF)",
+                    data=build_feedback_pdf(result),
+                    file_name=f"{_file_slug(result['student']['name'])}_Detailed-Feedback.pdf",
+                    mime="application/pdf",
+                    on_click="ignore",
+                    type="primary",
+                )
+            if result["quotes_dropped"]:
+                st.caption(
+                    f"{result['quotes_dropped']} quote(s) proposed by the model could not be found in "
+                    "the thesis text and were left out of the report."
+                )
 
             st.subheader("Full Report")
-            report_md = result.get("full_report_markdown", "")
-            st.markdown(report_md)
-
-            st.download_button(
-                "Download report (PDF)",
-                data=markdown_to_pdf_bytes(report_md, "Thesis Evaluation Report"),
-                file_name="thesis_evaluation_report.pdf",
-                mime="application/pdf",
-            )
+            st.markdown(result["full_report_markdown"])
 
 else:
     st.header("Exam Auto-Grader")
@@ -180,4 +200,5 @@ else:
                 data=markdown_to_pdf_bytes(report_md, "Exam Grading Report"),
                 file_name="exam_grading_report.pdf",
                 mime="application/pdf",
+                on_click="ignore",
             )

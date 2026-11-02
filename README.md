@@ -6,12 +6,22 @@ Claude API.
 ## Features
 
 1. **Thesis Qualification Checker** — Upload your university's thesis
-   guidelines and a thesis document. The agent checks the thesis against the
-   guidelines and returns:
-   - A qualification verdict (Qualified / Conditionally Qualified / Not Qualified)
-   - An acceptance percentage
-   - A full breakdown by criterion, strengths, weaknesses, and recommendations
-   - A downloadable Markdown report
+   guidelines (with its marking rubric) and a thesis document. The agent
+   produces a **Detailed Feedback report** (on screen and as a branded PDF):
+   - Student details table and overall mark with its ECTS classification
+   - Summary of marks: every rubric criterion with weight, mark and
+     contribution (the weighted total is computed in code, not by the model)
+   - Integrity findings (contradictions, future-tense method, scale
+     mismatches, citation mismatches)
+   - Criterion-by-criterion feedback with **verbatim quotes, verified against
+     the thesis text and tagged with the real PDF page number**
+   - A "What to fix to reach a pass" list and the grading scale
+
+   The criteria and weights are read from the uploaded guidelines; if the
+   guidelines have no readable rubric, the default EIU doctorate rubric in
+   `src/report_template.py` is used. The agent can only check the submitted text:
+   it does not verify that cited works exist, Turnitin similarity, or raw data
+   files, and the report says so.
 
 2. **Exam Auto-Grader** — Upload the exam questions, the official answer key,
    and a student's submitted answers. The agent grades each question, awards
@@ -83,10 +93,16 @@ Academic_Ai_agent/
 ├── src/
 │   ├── document_parser.py   # PDF/DOCX/TXT text extraction
 │   ├── llm_client.py        # Anthropic API wrapper + JSON parsing
-│   ├── thesis_evaluator.py  # Thesis qualification logic + prompt
+│   ├── thesis_evaluator.py  # Detailed-feedback logic: prompt, marks maths, quote verification
+│   ├── feedback_pdf.py      # Branded Detailed Feedback PDF (letterhead, tables, quotes)
+│   ├── report_template.py   # Letterhead text, grading scale, default rubric (edit to rebrand)
 │   ├── exam_grader.py       # Exam grading logic + prompt
+│   ├── pdf_export.py        # Simple markdown-to-PDF (exam report)
 │   └── ui.py                 # Theming/animation, login gate, percentage gauge
-├── assets/bradford_logo.png  # Header/login logo
+├── assets/
+│   ├── bradford_logo.png    # Header/login logo
+│   ├── eiu_logo.png         # Letterhead logo on the feedback PDF
+│   └── fonts/               # DejaVu Sans (Unicode PDF text; free licence included)
 ├── api/index.py             # Vercel placeholder landing page (see note above)
 ├── vercel.json               # Routes all Vercel traffic to the placeholder
 ├── requirements.txt

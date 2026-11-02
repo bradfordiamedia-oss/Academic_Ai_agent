@@ -5,13 +5,19 @@ import io
 
 import pdfplumber
 from docx import Document
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
 
-def extract_text(file_bytes: bytes, filename: str) -> str:
-    """Extract plain text from an uploaded file based on its extension."""
+def extract_text(file_bytes: bytes, filename: str, page_markers: bool = False) -> str:
+    """Extract plain text from an uploaded file based on its extension.
+
+    With ``page_markers`` a PDF's text gets a ``[[Page N]]`` line before each
+    page, so quotes can later be traced back to a real page number.
+    """
     lower = filename.lower()
     if lower.endswith(".pdf"):
-        text = _extract_pdf(file_bytes)
+        text = _extract_pdf(file_bytes, page_markers)
     elif lower.endswith(".docx"):
         text = _extract_docx(file_bytes)
     elif lower.endswith(".txt") or lower.endswith(".md"):
@@ -32,21 +38,27 @@ def _sanitize(text: str) -> str:
     return text.encode("utf-8", errors="ignore").decode("utf-8")
 
 
-def _extract_pdf(file_bytes: bytes) -> str:
+def _page_block(number: int, text: str, page_markers: bool) -> str:
+    return f"[[Page {number}]]\n{text}" if page_markers else text
+
+
+def _extract_pdf(file_bytes: bytes, page_markers: bool = False) -> str:
     text_parts = []
+    has_text = False
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
+        for number, page in enumerate(pdf.pages, start=1):
             page_text = page.extract_text()
             if page_text:
-                text_parts.append(page_text)
-    text = "\n".join(text_parts)
-    if text.strip():
-        return text
+                has_text = True
+            if page_markers or page_text:
+                text_parts.append(_page_block(number, page_text or "", page_markers))
+    if has_text:
+        return "\n".join(text_parts)
     # No embedded text layer (likely a scanned/photographed PDF) - fall back to OCR.
-    return _ocr_pdf(file_bytes)
+    return _ocr_pdf(file_bytes, page_markers)
 
 
-def _ocr_pdf(file_bytes: bytes) -> str:
+def _ocr_pdf(file_bytes: bytes, page_markers: bool = False) -> str:
     try:
         import pymupdf as fitz
         import pytesseract
@@ -55,20 +67,40 @@ def _ocr_pdf(file_bytes: bytes) -> str:
         return ""
 
     text_parts = []
+    has_text = False
     try:
         with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
-            for page in pdf:
+            for number, page in enumerate(pdf, start=1):
                 pixmap = page.get_pixmap(dpi=300)
                 image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
                 page_text = pytesseract.image_to_string(image)
                 if page_text.strip():
-                    text_parts.append(page_text)
+                    has_text = True
+                if page_markers or page_text.strip():
+                    text_parts.append(_page_block(number, page_text, page_markers))
     except Exception:
         # OCR engine (Tesseract binary) unavailable or failed - degrade gracefully.
         return ""
-    return "\n".join(text_parts)
+    # A doc where OCR found nothing on any page must still read as empty.
+    return "\n".join(text_parts) if has_text else ""
 
 
 def _extract_docx(file_bytes: bytes) -> str:
+    """Paragraphs and tables, in document order (tables hold the thesis data)."""
     document = Document(io.BytesIO(file_bytes))
-    return "\n".join(paragraph.text for paragraph in document.paragraphs)
+    lines = []
+    for child in document.element.body.iterchildren():
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "p":
+            lines.append(Paragraph(child, document).text)
+        elif tag == "tbl":
+            for row in Table(child, document).rows:
+                seen = set()
+                cells = []
+                for cell in row.cells:
+                    if id(cell._tc) in seen:  # merged cells repeat the same cell
+                        continue
+                    seen.add(id(cell._tc))
+                    cells.append(" ".join(cell.text.split()))
+                lines.append(" | ".join(cells))
+    return "\n".join(lines)
