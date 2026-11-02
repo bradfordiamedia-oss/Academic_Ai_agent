@@ -79,7 +79,17 @@ def _read_one(uploaded, page_markers: bool = False) -> str | None:
         with st.spinner(f"Reading {uploaded.name}..."):
             text = _extract_cached(uploaded.getvalue(), uploaded.name, page_markers)
     except Exception as exc:  # noqa: BLE001 - surface any failure to the user
-        st.error(f"Couldn't read {uploaded.name}: {exc}")
+        message = str(exc)
+        if uploaded.name.lower().endswith(".pdf") and any(
+            hint in message for hint in ("Root object", "PDF", "EOF", "xref", "Stream")
+        ):
+            st.error(
+                f"**{uploaded.name}** ({len(uploaded.getvalue()) / 1024:.1f} KB) isn't a valid PDF. It may be "
+                "corrupted, cut off during download, empty, or a different file type renamed to .pdf. "
+                "Please re-download or re-export it and upload it again."
+            )
+        else:
+            st.error(f"Couldn't read {uploaded.name}: {exc}")
         return None
     if not text.strip():
         st.warning(
