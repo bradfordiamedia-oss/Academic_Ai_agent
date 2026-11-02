@@ -101,7 +101,8 @@ Academic_Ai_agent/
 │   └── ui.py                 # Theming/animation, login gate, percentage gauge
 ├── assets/
 │   ├── bradford_logo.png    # Header/login logo
-│   ├── eiu_logo.png         # Letterhead logo on the feedback PDF
+│   ├── report_header.png    # Feedback PDF page header (Bradford logo)
+│   ├── report_footer.png    # Feedback PDF page footer (office addresses)
 │   └── fonts/               # DejaVu Sans (Unicode PDF text; free licence included)
 ├── api/index.py             # Vercel placeholder landing page (see note above)
 ├── vercel.json               # Routes all Vercel traffic to the placeholder

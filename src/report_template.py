@@ -9,25 +9,15 @@ from datetime import date
 from pathlib import Path
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
-LOGO_PATH = ASSETS_DIR / "eiu_logo.png"
+HEADER_IMAGE = ASSETS_DIR / "report_header.png"  # full-width page header (Bradford logo)
+FOOTER_IMAGE = ASSETS_DIR / "report_footer.png"  # full-width page footer (office addresses)
 FONT_DIR = ASSETS_DIR / "fonts"
 
 INSTITUTION = {
-    "name": "EUROPEAN INTERNATIONAL UNIVERSITY (EIU-Paris)",
+    # Name of the university whose marking scale/rubric the guidelines use.
     "short": "EIU-Paris",
-    "subtitle": "European International University (EIU-Paris) | Paris, France",
-    "header_lines": [
-        "Paris, France | Établissement d'Enseignement Supérieur Privé",
-        "UAI 0756213W",
-        "ACBSP Accredited | QS Stars 5/5 | ASIC Premier Institution",
-        "BrandLaureate Best Brand 2025 | CEOWORLD Top 50 for 2025",
-    ],
-    "footer_lines": [
-        "59 Rue Lamarck, 75018 Paris, France | https://eiu.ac | info@eiu.ac | WhatsApp: +33 6 13 92 62 64",
-        "Our ACBSP-accredited MBA is listed at #=92 in the QS Full-time MBA Rankings: Europe 2027 (global band #301+).",
-        "Source: https://www.topuniversities.com/mba-rankings/europe",
-    ],
-    "issued_by": "European International University, EIU-Paris, 59 Rue Lamarck, 75018 Paris, France",
+    # Who the feedback is prepared for (shown in the closing note).
+    "issued_by": "Bradford International Alliance",
 }
 
 # (criterion name, weight %) - used only when the uploaded guidelines do not

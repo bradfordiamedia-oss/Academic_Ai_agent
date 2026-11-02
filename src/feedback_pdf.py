@@ -7,8 +7,7 @@ from fpdf.fonts import FontFace
 
 from src import report_template as tpl
 
-NAVY = (11, 29, 58)
-GOLD = (201, 154, 46)
+NAVY = (114, 46, 119)  # Bradford brand purple (matches the footer banner)
 TEXT = (30, 32, 38)
 MUTED = (85, 90, 100)
 RED = (142, 29, 42)
@@ -19,6 +18,10 @@ ROW_ALT = (236, 241, 248)
 TOTAL_FILL = (251, 229, 229)
 BORDER = (170, 176, 188)
 
+PAGE_W, PAGE_H = 210, 297
+HEADER_H = PAGE_W * 155 / 1400  # header image is 1400 x 155 px
+FOOTER_H = PAGE_W * 357 / 2000  # footer image is 2000 x 357 px
+
 BODY = 9.2
 LINE = 4.8
 NEXT_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
@@ -27,49 +30,27 @@ NEXT_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 class _FeedbackPDF(FPDF):
     def __init__(self) -> None:
         super().__init__(format="A4")
-        self.set_margins(16, 40, 16)
-        self.set_auto_page_break(True, margin=28)
+        self.set_margins(16, HEADER_H + 8, 16)
+        self.set_auto_page_break(True, margin=FOOTER_H + 5)
         self.add_font("DejaVu", "", str(tpl.FONT_DIR / "DejaVuSans.ttf"))
         self.add_font("DejaVu", "B", str(tpl.FONT_DIR / "DejaVuSans-Bold.ttf"))
         self.add_font("DejaVu", "I", str(tpl.FONT_DIR / "DejaVuSans-Oblique.ttf"))
         self._body()
 
-    # ---- page furniture (letterhead on every page, as in the sample)
+    # ---- page furniture: full-width image header and footer on every page
 
     def header(self) -> None:
-        inst = tpl.INSTITUTION
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 210, 32, style="F")
-        self.set_fill_color(*GOLD)
-        self.rect(0, 32, 210, 0.9, style="F")
-        self.set_fill_color(*WHITE)
-        self.rect(10, 4.5, 60, 23, style="F", round_corners=True, corner_radius=2)
-        if tpl.LOGO_PATH.exists():
-            self.image(str(tpl.LOGO_PATH), x=12, y=7.2, w=56)
-        self.set_text_color(*WHITE)
-        self.set_font("DejaVu", "B", 9.5)
-        self.set_xy(76, 6.5)
-        self.cell(118, 5, inst["name"], align="R")
-        self.set_font("DejaVu", "", 7.3)
-        y = 12.3
-        for line in inst["header_lines"]:
-            self.set_xy(76, y)
-            self.cell(118, 4, line, align="R")
-            y += 4.4
+        if tpl.HEADER_IMAGE.exists():
+            self.image(str(tpl.HEADER_IMAGE), x=0, y=0, w=PAGE_W)
+        self.set_draw_color(*NAVY)
+        self.set_line_width(0.5)
+        self.line(16, HEADER_H + 1, PAGE_W - 16, HEADER_H + 1)
         self._body()
         self.set_y(self.t_margin)
 
     def footer(self) -> None:
-        lines = tpl.INSTITUTION["footer_lines"]
-        self.set_draw_color(*GOLD)
-        self.set_line_width(0.4)
-        self.line(16, 273, 194, 273)
-        self.set_y(274.5)
-        self.set_font("DejaVu", "", 7.3)
-        for i, line in enumerate(lines):
-            self.set_text_color(*(TEXT if i == 0 else NAVY))
-            self.cell(0, 3.6, line, align="C", **NEXT_LINE)
-        self._body()
+        if tpl.FOOTER_IMAGE.exists():
+            self.image(str(tpl.FOOTER_IMAGE), x=0, y=PAGE_H - FOOTER_H, w=PAGE_W)
 
     # ---- text helpers
 
@@ -208,9 +189,6 @@ def build_feedback_pdf(result: dict) -> bytes:
     pdf.set_font("DejaVu", "B", 14)
     pdf.set_text_color(*NAVY)
     pdf.cell(0, 8, result["report_title"], align="C", **NEXT_LINE)
-    pdf.set_font("DejaVu", "", 8.8)
-    pdf.set_text_color(*TEXT)
-    pdf.cell(0, 5, inst["subtitle"], align="C", **NEXT_LINE)
     pdf.ln(4)
     pdf._body()
 
