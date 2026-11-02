@@ -66,7 +66,18 @@ STEP 3 - EVIDENCE
   printed in the thesis, stated as a factual inconsistency to check; (b) in-text citations missing
   from the reference list or the reverse; (c) incomplete reference entries. Always tell the
   student to verify such points against the sources.
-- Use the word count and page count from SUBMISSION FACTS. Do not guess lengths.
+- ACKNOWLEDGED ISSUES: before saying the thesis fails to state, explain or disclose something,
+  search the thesis for it. If the thesis already says it (in a note, a limitations section or an
+  interpretation paragraph), credit that and report only what is still wrong - for example a
+  table label that still contradicts the text.
+- UNFINISHED TEXT: if a thesis presented as final still contains notes addressed to the author,
+  revision notes or placeholders (for example "the author should insert ..."), report that as an
+  integrity finding and quote one such note.
+- Use the word count and page count from SUBMISSION FACTS. Do not guess lengths. The word count
+  covers the whole file (front matter, references, appendices and tables), so the body text is
+  shorter: describe a word-limit breach as "about", ask the student to confirm the body-text
+  count, and call it a fundamental breach only if even a 20% deduction still leaves it outside
+  the limit.
 
 OUTPUT
 Respond with ONLY one JSON object (no prose outside it) of this shape:
@@ -186,11 +197,11 @@ def _finalize(raw: dict, thesis_text: str, facts: dict, student_name: str, stude
                 "name": _s(item.get("name")),
                 "weight": max(_num(item.get("weight")), 0.0),
                 "mark": max(0, min(100, int(round(_num(item.get("mark")))))),
-                "why": _s(item.get("why")),
-                "strength": _s(item.get("strength")),
+                "why": _prose(item.get("why")),
+                "strength": _prose(item.get("strength")),
                 "quotes": quotes,
-                "holds_down": _s(item.get("holds_down")),
-                "checks": [_s(c) for c in _as_list(item.get("checks")) if _s(c)][:5],
+                "holds_down": _prose(item.get("holds_down")),
+                "checks": [_prose(c) for c in _as_list(item.get("checks")) if _prose(c)][:5],
             }
         )
     if not criteria:
@@ -210,7 +221,7 @@ def _finalize(raw: dict, thesis_text: str, facts: dict, student_name: str, stude
             continue
         quotes, lost = _verify_quotes(finding.get("quotes"), locator, facts, limit=3)
         dropped += lost
-        findings.append({"title": _s(finding.get("title")), "detail": _s(finding.get("detail")), "quotes": quotes})
+        findings.append({"title": _s(finding.get("title")), "detail": _prose(finding.get("detail")), "quotes": quotes})
 
     level_word = _level_word(raw.get("programme_level"))
     band = tpl.band_for(overall)
@@ -246,7 +257,7 @@ def _finalize(raw: dict, thesis_text: str, facts: dict, student_name: str, stude
         "pass_mark": pass_mark,
         "passed": overall >= pass_mark,
         "integrity_findings": findings,
-        "fix_list": [_s(x) for x in _as_list(raw.get("fix_list")) if _s(x)][:14],
+        "fix_list": [_prose(x) for x in _as_list(raw.get("fix_list")) if _prose(x)][:14],
         "scale": scale_rows,
         "quotes_dropped": dropped,
     }
@@ -271,6 +282,27 @@ def _normalize_weights(criteria: list[dict]) -> bool:
 
 def _s(value) -> str:
     return " ".join(str(value).split()) if isinstance(value, (str, int, float)) else ""
+
+
+_RANGE = r"\d+(?:\s*(?:[-–—]|to|and|,)\s*\d+)*"
+_PAGE_PARENTHETICAL = re.compile(rf"\s*\((?:see |at |on )?(?:pages?|pp?\.)\s*{_RANGE}\)", re.I)
+_PAGE_SUBJECT = re.compile(
+    rf"\bpages?\s+{_RANGE}\s+(?=(?:states|says|notes|shows|reports|describes|confirms|acknowledges)\b)", re.I
+)
+_PAGE_PREPOSITION = re.compile(rf"\s+(?:on|in|at|from|see)\s+pages?\s+{_RANGE}", re.I)
+
+
+def _prose(value) -> str:
+    """Free text from the model, with any page numbers it wrote removed.
+
+    The model is told not to state pages, and in practice it sometimes gets them
+    wrong. Only the page on a verified quote's source line can be trusted.
+    """
+    text = _s(value)
+    text = _PAGE_PARENTHETICAL.sub("", text)
+    text = _PAGE_SUBJECT.sub("The thesis ", text)
+    text = _PAGE_PREPOSITION.sub("", text)
+    return _s(text)
 
 
 def _optional(value) -> str:
