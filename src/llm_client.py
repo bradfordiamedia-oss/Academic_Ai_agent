@@ -44,28 +44,37 @@ def call_json(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) 
     strips markdown code fences defensively in case the model adds them.
     """
     client = get_client()
-    response = client.messages.create(
-        model=model,
-        max_tokens=16000,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    raw_text = "".join(
-        block.text for block in response.content if getattr(block, "type", None) == "text"
-    )
-    if not raw_text.strip():
-        raise RuntimeError(
-            f"The model returned no text (stop_reason={response.stop_reason!r}). "
-            "This usually means the uploaded documents are too long for a single "
-            "response - try shorter/trimmed documents."
+    for attempt in range(2):
+        response = client.messages.create(
+            model=model,
+            max_tokens=16000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
         )
-    if response.stop_reason == "max_tokens":
-        raise RuntimeError(
-            "The model's response was cut off before it could finish (ran out of "
-            "output budget). Please try again - if it keeps happening, the "
-            "documents may be too long for a single evaluation."
+        raw_text = "".join(
+            block.text for block in response.content if getattr(block, "type", None) == "text"
         )
-    return _parse_json(raw_text)
+        if not raw_text.strip():
+            raise RuntimeError(
+                f"The model returned no text (stop_reason={response.stop_reason!r}). "
+                "This usually means the uploaded documents are too long for a single "
+                "response - try shorter/trimmed documents."
+            )
+        if response.stop_reason == "max_tokens":
+            raise RuntimeError(
+                "The model's response was cut off before it could finish (ran out of "
+                "output budget). Please try again - if it keeps happening, the "
+                "documents may be too long for a single evaluation."
+            )
+        try:
+            return _parse_json(raw_text)
+        except json.JSONDecodeError:
+            # Long structured replies occasionally contain a malformed spot the
+            # repair can't fix; a second attempt almost always succeeds.
+            if attempt == 1:
+                raise RuntimeError(
+                    "The model returned a malformed reply twice in a row. Please try again."
+                ) from None
 
 
 def _parse_json(raw_text: str) -> dict:
@@ -92,7 +101,7 @@ def _escape_raw_control_chars_in_strings(text: str) -> str:
     out = []
     in_string = False
     escape_next = False
-    for ch in text:
+    for index, ch in enumerate(text):
         if in_string:
             if escape_next:
                 out.append(ch)
@@ -101,8 +110,15 @@ def _escape_raw_control_chars_in_strings(text: str) -> str:
                 out.append(ch)
                 escape_next = True
             elif ch == '"':
-                out.append(ch)
-                in_string = False
+                # A real closing quote is followed by , } ] : or the end. Anything
+                # else is a literal quote inside a quoted passage that the model
+                # forgot to escape.
+                rest = text[index + 1:].lstrip()
+                if rest == "" or rest[0] in ",}]:":
+                    out.append(ch)
+                    in_string = False
+                else:
+                    out.append('\\"')
             elif ch == "\n":
                 out.append("\\n")
             elif ch == "\r":
