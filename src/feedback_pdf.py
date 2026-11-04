@@ -243,6 +243,13 @@ def build_feedback_pdf(result: dict) -> bytes:
     if result["weights_normalized"]:
         note += " The weights stated in the guidelines did not add up to 100 and were scaled proportionally."
     pdf.para(note, size=8, color=MUTED, align="L", line=4.2)
+    for cap in result.get("caps", []):
+        pdf.para(
+            f"Integrity limit: Criterion {cap['criterion']} ({cap['name']}) was limited from {cap['from_mark']}% "
+            f"to {cap['to_mark']}% because of {cap['severity']} finding {cap['finding']}, as the assessment "
+            "brief puts integrity first.",
+            size=8, color=MUTED, align="L", line=4.2, after=0.6,
+        )
 
     # 2. Integrity findings
     pdf.h1("2. Integrity Findings")
@@ -253,7 +260,8 @@ def build_feedback_pdf(result: dict) -> bytes:
             "and serious ones keep those criteria low and can lead to a fail."
         )
         for i, finding in enumerate(findings, 1):
-            pdf.h2(f"2.{i} {finding['title']}", size=10)
+            tag = f" ({finding['severity']})" if finding.get("severity", "minor") != "minor" else ""
+            pdf.h2(f"2.{i} {finding['title']}{tag}", size=10)
             pdf.para(finding["detail"])
             for quote in finding["quotes"]:
                 pdf.quote(quote)

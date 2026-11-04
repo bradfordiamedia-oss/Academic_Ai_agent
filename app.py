@@ -57,10 +57,29 @@ def _evaluate_thesis_cached(
     module: str,
     supporting: str,
     supporting_names: tuple,
+    level: str,
 ) -> dict:
     return evaluate_thesis(
-        guidelines_text, thesis_text, student_name, student_id, module, supporting, supporting_names
+        guidelines_text, thesis_text, student_name, student_id, module, supporting, supporting_names, level
     )
+
+
+def _explain_api_error(exc: Exception) -> str | None:
+    """Plain-language message for account-level API problems (not code bugs)."""
+    text = str(exc)
+    if "credit balance is too low" in text:
+        return (
+            "The Anthropic API account has run out of credits, so nothing can be evaluated right now. "
+            "Add credits under Plans & Billing in the Anthropic Console, then try again."
+        )
+    if "usage limits" in text:
+        return (
+            "The Anthropic API usage limit for this account has been reached. Raise the limit in the "
+            "Anthropic Console (Settings > Limits) or wait for it to reset, then try again."
+        )
+    if "API key is invalid" in text or "authentication_error" in text:
+        return "The Anthropic API key is invalid or was revoked. Update ANTHROPIC_API_KEY in the app's Secrets."
+    return None
 
 
 def _file_slug(text: str) -> str:
@@ -180,20 +199,29 @@ if tool == "Thesis Qualification Checker":
 
     with st.expander("Report details (optional)"):
         st.caption("Leave blank to use what the agent finds on the thesis cover page.")
-        dcol1, dcol2, dcol3 = st.columns(3)
+        dcol1, dcol2, dcol3, dcol4 = st.columns(4)
         student_name = dcol1.text_input("Student name")
         student_id = dcol2.text_input("ID number")
         module = dcol3.text_input("Module name / code")
+        level_choice = dcol4.selectbox(
+            "Programme level", ["Auto-detect", "Doctoral", "Master's", "Bachelor's"],
+            help="Auto-detect reads the thesis cover page. Choose a level to override it.",
+        )
 
     if st.button("Evaluate Thesis", type="primary", disabled=not (guidelines_text and thesis_text)):
         try:
             result = _evaluate_thesis_cached(
                 guidelines_text, thesis_text, student_name.strip(), student_id.strip(), module.strip(),
                 supporting_text, supporting_names,
+                "" if level_choice == "Auto-detect" else level_choice,
             )
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
-            st.error(f"Evaluation failed: {exc}")
-            st.exception(exc)
+            friendly = _explain_api_error(exc)
+            if friendly:
+                st.error(friendly)
+            else:
+                st.error(f"Evaluation failed: {exc}")
+                st.exception(exc)
         else:
             gcol, vcol = st.columns([1, 1])
             with gcol:
@@ -242,8 +270,12 @@ else:
                 questions_text, answer_key_text, student_answers_text, passing_threshold
             )
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
-            st.error(f"Grading failed: {exc}")
-            st.exception(exc)
+            friendly = _explain_api_error(exc)
+            if friendly:
+                st.error(friendly)
+            else:
+                st.error(f"Grading failed: {exc}")
+                st.exception(exc)
         else:
             gcol, scol, rcol = st.columns([1, 1, 1])
             with gcol:
