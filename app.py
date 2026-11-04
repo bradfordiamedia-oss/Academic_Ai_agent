@@ -238,6 +238,10 @@ if tool == "Thesis Qualification Checker":
                 )
             if result.get("outcome_note"):
                 st.warning(result["outcome_note"])
+            if result.get("findings_dropped"):
+                st.caption(
+                    f"{result['findings_dropped']} finding(s) were removed because the thesis text cannot support them."
+                )
             if result["quotes_dropped"]:
                 st.caption(
                     f"{result['quotes_dropped']} quote(s) proposed by the model could not be found in "

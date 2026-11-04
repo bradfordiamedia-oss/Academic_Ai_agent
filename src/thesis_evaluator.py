@@ -104,10 +104,15 @@ STEP 3 - EVIDENCE
 - REFERENCES: your own knowledge ends before today's date (given in SUBMISSION FACTS), so recent
   publication years are never evidence of a problem. Never call a reference fabricated, fake or
   impossible, never accuse the student of misconduct, and never treat any year up to today's year
-  as suspicious. You may flag only: (a) a reference dated later than a submission date that is
-  printed in the thesis, stated as a factual inconsistency to check; (b) in-text citations missing
+  as suspicious. You may flag only: (a) a reference dated later than the submission date printed on
+  the cover (see SUBMISSION FACTS; if none is printed, never raise this), stated as a factual
+  inconsistency to check; (b) in-text citations missing
   from the reference list or the reverse; (c) incomplete reference entries. Always tell the
   student to verify such points against the sources.
+- NO ACCUSATIONS: never write fabricated, fabrication, falsified, forged or made-up about the
+  student's data, results or references, and never speculate about intent. Describe the symptom
+  (copied rows, impossible values) and say the results cannot be trusted until they are checked
+  against the original output.
 - SUPPORTING FILES: when summaries of data or model files are supplied, cross-check them with
   the thesis (case counts, scale ranges, means) and report mismatches as findings or "checks".
   State them as facts from the files - they cannot be quoted - and claim no check beyond what
@@ -178,6 +183,7 @@ USER_PROMPT_TEMPLATE = """ASSESSMENT GUIDELINES:
 SUBMISSION FACTS (computed by the system):
 - Today's date: {today}
 - Programme level: {level}
+- Submission date printed on the cover: {printed_date}
 - Document type: {label}
 - Word count (whole file, including front matter and references): about {words}
 - Pages: {pages}
@@ -214,6 +220,7 @@ def evaluate_thesis(
     prompt = USER_PROMPT_TEMPLATE.format(
         guidelines=guidelines_text.strip(),
         today=tpl.format_date(),
+        printed_date=_printed_date(thesis_text) or "none printed",
         level=known_level or "not stated - judge it from the thesis cover page and the guidelines",
         label=facts["label"],
         words=f"{facts['words']:,}",
@@ -294,6 +301,10 @@ def _finalize(
                 "quotes": quotes,
             }
         )
+    printed_year = _printed_year(thesis_text)
+    kept = [f for f in findings if not _unsupported_reference_date_claim(f, printed_year)]
+    findings_dropped = len(findings) - len(kept)
+    findings = kept
     caps = _apply_integrity_caps(criteria, findings)
 
     total = 0.0
@@ -345,6 +356,7 @@ def _finalize(
         ),
         "integrity_findings": findings,
         "caps": caps,
+        "findings_dropped": findings_dropped,
         "fix_list": [_prose(x) for x in _as_list(raw.get("fix_list")) if _prose(x)][:14],
         "scale": scale_rows,
         "quotes_dropped": dropped,
@@ -357,6 +369,9 @@ def _finalize(
 
 _INTEGRITY_CAPS = {"critical": 40, "major": 60}
 _CRITICAL_ALWAYS_HITS = ("data analysis", "conclusion")
+# Integrity can only limit these. A model that says a name mismatch "affects" the
+# abstract would otherwise drag down criteria the university did not touch.
+_CAPPABLE = ("method", "data analysis", "conclusion", "citation", "reference")
 
 _DOCTORAL = re.compile(r"\b(?:doctor\s+of|doctorate|doctoral|ph\.?\s?d\b|d\.?b\.?a\b)", re.I)
 _MASTERS = re.compile(r"\b(?:master\s+of|master[\'\u2019]?s|masters|m\.?sc\b|m\.?b\.?a\b|m\.?phil\b)", re.I)
@@ -403,7 +418,7 @@ def _apply_integrity_caps(criteria: list[dict], findings: list[dict]) -> list[di
         limit = _INTEGRITY_CAPS.get(finding["severity"])
         if limit is None:
             continue
-        affected = set(finding["affects"])
+        affected = {i for i in finding["affects"] if any(k in criteria[i]["name"].lower() for k in _CAPPABLE)}
         if finding["severity"] == "critical":
             # The brief: integrity failures keep Data Analysis and Conclusion low.
             affected |= {
@@ -424,6 +439,37 @@ def _apply_integrity_caps(criteria: list[dict], findings: list[dict]) -> list[di
                 )
                 criterion["mark"] = limit
     return caps
+
+
+_MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
+_COVER_DATE = re.compile(rf"\b(?:date|submitted|submission)\b[^A-Za-z0-9]{{0,8}}((?:(?:{_MONTHS})\s+)?(?:19|20)\d\d)", re.I)
+
+
+def _printed_date(thesis_text: str) -> str:
+    """Submission date printed on the cover, e.g. 'April 2026' ('' if none)."""
+    head = " ".join(PAGE_MARKER.sub(" ", thesis_text)[:4000].split())
+    match = _COVER_DATE.search(head)
+    return match.group(1) if match else ""
+
+
+def _printed_year(thesis_text: str):
+    match = re.search(r"(?:19|20)\d\d", _printed_date(thesis_text))
+    return int(match.group()) if match else None
+
+
+_REF_WORDS = re.compile(r"referenc|citation|cited", re.I)
+_AFTER_DATE = re.compile(r"(?:dated|published|publication)[^.]{0,80}(?:after|later|beyond)|after (?:the )?(?:thesis )?submission", re.I)
+
+
+def _unsupported_reference_date_claim(finding: dict, printed_year) -> bool:
+    """'References dated after the submission date' is only checkable against a
+    date printed in the thesis; without one (or when the years are not later) the
+    claim is dropped."""
+    text = f"{finding['title']} {finding['detail']}"
+    if not (_REF_WORDS.search(text) and _AFTER_DATE.search(text)):
+        return False
+    years = [int(y) for y in re.findall(r"\b(?:19|20)\d\d\b", text)]
+    return not (printed_year and any(y > printed_year for y in years))
 
 
 def _mark_from(item: dict) -> int:
