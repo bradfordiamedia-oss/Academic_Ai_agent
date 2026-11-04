@@ -236,6 +236,8 @@ if tool == "Thesis Qualification Checker":
                     on_click="ignore",
                     type="primary",
                 )
+            if result.get("outcome_note"):
+                st.warning(result["outcome_note"])
             if result["quotes_dropped"]:
                 st.caption(
                     f"{result['quotes_dropped']} quote(s) proposed by the model could not be found in "

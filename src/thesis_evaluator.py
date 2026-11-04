@@ -33,8 +33,12 @@ default rubric:
 Weights must add up to 100.
 
 STEP 2 - MARKS
-Give each criterion a whole-number mark from 0 to 100, calibrated to this European scale, where
-60 is already a very good mark and 90+ is rare:
+If the rubric has levels (for example 5 = excellent, 3-4 = good, 1-2 = developing, 0 = not met),
+give "level" for each criterion: a number from 0 to 5 in steps of 0.5, chosen by reading the level
+descriptors literally against the evidence. In "why" name the descriptor words that decide the
+level. The system turns the level into a mark (level x 20), so do not also give a percentage. If
+the rubric has no levels, give "mark" as a whole number from 0 to 100 instead. Marks follow this
+European scale, where 60 is already a very good mark and 90+ is rare:
 {{SCALE}}
 Weight issues by severity; do not average every deviation equally:
 - Minor or cosmetic gaps (a few formatting slips, small inconsistencies) cost only a few points.
@@ -53,24 +57,39 @@ LEVEL: mark to the standard of the programme level given in SUBMISSION FACTS. A 
 must show an original contribution, a replicable method and trustworthy data; do not apply
 master's-level leniency.
 
-SEVERITY OF INTEGRITY FINDINGS: label each finding "critical", "major" or "minor".
-- critical = made-up or unsafe data (means or values outside the stated scale, identical or copied
-  result rows, demographic or result tables the data cannot support), a method still written in
-  the future tense in a finished thesis, or a different person's name on the declaration or
-  certificate.
-- major = other contradictions between text and tables, missing ethics approval for human
-  participants, in-text citations missing from the reference list or the reverse.
+INTEGRITY FIRST: doctoral integrity comes before everything else. Made-up or simulated data, notes
+to the author left in the text, a method written in the future tense in a finished thesis, and
+references that cannot be checked are integrity failures. Go through this checklist and report
+only what you actually find:
+1. Names: the candidate's name on the cover, declaration and certificate must match.
+2. Tense: the method chapter must report what was done. Wording such as "will be collected" or
+   "will consist of" in a finished thesis is a failure - quote two examples.
+3. Scale: values, means or ranges outside the stated scale (for example means above 5 on a 1-5
+   scale, or a data file whose range differs from the instrument described).
+4. Copied rows: result tables where different hypotheses or paths share identical statistics.
+5. Prose against tables: counts, percentages or effect sizes in the text that contradict a table.
+6. Data support: demographic or result tables that no supplied data file can support.
+7. Notes to the author or revision notes left in the text.
+8. References: in-text citations missing from the reference list or the reverse, and incomplete
+   entries.
+Label each finding "critical", "major" or "minor":
+- critical = items 1, 2, 3, 4 and 7, and any made-up or simulated data.
+- major = items 5, 6 and 8, other contradictions between text and tables, and missing ethics
+  documentation for human participants.
 - minor = everything else.
-In "affects" list the numbers of the rubric criteria a finding damages (for example Methodology,
-Data Analysis, Conclusion, Citations). The system caps affected criteria at 40 for a critical
-finding and 60 for a major one, so mark all other criteria on their own merits.
+Critical findings are integrity failures: the system limits Criteria 6 and 7 (Data Analysis and
+Conclusion) and every criterion you list in "affects" to 40, and a thesis with an integrity failure
+cannot pass whatever its total. Major findings limit the criteria in "affects" to 60. In "affects"
+list the numbers of the criteria a finding damages (for example Methodology, Data Analysis,
+Conclusion, Citations). Mark every other criterion on its own merits.
 
 CALIBRATION EXAMPLE - the university's own marking of a doctoral thesis with critical integrity
 problems (method still in the future tense, a stated 5-point scale contradicted by means above 5,
 identical result rows for a direct path and a mediation path, a different person's name on the
-certificate): Topic 80, Abstract 80, Rationale 80, Literature Review 50 (mostly summarises), Methodology
-40, Data Analysis 20, Conclusion 30, Organization 60, Grammar 40, Citations 40, giving a weighted
-total of 44 and a fail. Well-written opening sections can score 80 even when the results are unsafe.
+certificate): Topic level 4, Abstract 4, Rationale 4, Literature Review 2.5 (mostly summarises),
+Methodology 2, Data Analysis 1, Conclusion 1.5, Organization 3, Grammar 2, Citations 2, giving a
+weighted total of 44 and a fail. Well-written opening sections can reach level 4 even when the
+results are unsafe.
 
 STEP 3 - EVIDENCE
 - Copy every quote EXACTLY from the thesis text, on one line, at most 60 words. To join separate
@@ -100,11 +119,13 @@ STEP 3 - EVIDENCE
 - UNFINISHED TEXT: if a thesis presented as final still contains notes addressed to the author,
   revision notes or placeholders (for example "the author should insert ..."), report that as an
   integrity finding and quote one such note.
-- Use the word count and page count from SUBMISSION FACTS. Do not guess lengths. The word count
-  covers the whole file (front matter, references, appendices and tables), so the body text is
-  shorter: describe a word-limit breach as "about", ask the student to confirm the body-text
-  count, and call it a fundamental breach only if even a 20% deduction still leaves it outside
-  the limit.
+- Use the word count and page count from SUBMISSION FACTS. Do not guess lengths. If the guidelines
+  say the total word count of the thesis is used, compare the figure directly with the stated
+  minimum or range. Otherwise the figure covers the whole file (front matter, references, appendices,
+  tables), so the body text is shorter: say "about" and ask the student to confirm the body-text
+  count.
+- SYSTEM-DETECTED SIGNALS: when the message lists signals found by pattern search (future-tense
+  method wording, notes to the author), look at each in context before reporting it, and quote it.
 
 OUTPUT
 Respond with ONLY one JSON object (no prose outside it) of this shape:
@@ -119,7 +140,8 @@ Respond with ONLY one JSON object (no prose outside it) of this shape:
     {
       "name": "<criterion name>",
       "weight": <percent>,
-      "mark": <integer 0-100>,
+      "level": <0-5 in steps of 0.5, when the rubric has levels>,
+      "mark": <integer 0-100, only when the rubric has no levels>,
       "why": "<2-3 sentences: why this mark>",
       "strength": "<1-2 sentences>",
       "quotes": [{"text": "<exact quote>", "section": "<where it sits>"}],
@@ -164,7 +186,7 @@ SUBMITTED THESIS:
 ---
 {thesis}
 ---
-{supporting_block}
+{supporting_block}{signals_block}
 Write the detailed feedback JSON described in your instructions."""
 
 SUPPORTING_BLOCK = """
@@ -198,6 +220,7 @@ def evaluate_thesis(
         pages=facts["pages"] if facts["pages"] else "not available (not a PDF)",
         thesis=thesis_text.strip(),
         supporting_block=SUPPORTING_BLOCK.format(supporting=supporting.strip()) if supporting.strip() else "",
+        signals_block=_signals_block(thesis_text),
     )
     raw = call_json(SYSTEM_PROMPT, prompt)
     result = _finalize(raw, thesis_text, facts, student_name, student_id, module, known_level)
@@ -242,7 +265,7 @@ def _finalize(
             {
                 "name": _s(item.get("name")),
                 "weight": max(_num(item.get("weight")), 0.0),
-                "mark": max(0, min(100, int(round(_num(item.get("mark")))))),
+                "mark": _mark_from(item),
                 "why": _prose(item.get("why")),
                 "strength": _prose(item.get("strength")),
                 "quotes": quotes,
@@ -280,6 +303,7 @@ def _finalize(
     total = round(total, 1)
     overall = int(total + 0.5)
 
+    integrity_failure = any(f["severity"] == "critical" for f in findings)
     level_word = known_level or _level_word(raw.get("programme_level"))
     band = tpl.band_for(overall)
     pass_mark = tpl.PASS_MARK
@@ -312,7 +336,13 @@ def _finalize(
         "overall_mark": overall,
         "classification": band["label"],
         "pass_mark": pass_mark,
-        "passed": overall >= pass_mark,
+        "passed": overall >= pass_mark and not integrity_failure,
+        "integrity_failure": integrity_failure,
+        "outcome_note": (
+            "Integrity failure: under the assessment brief this thesis cannot pass whatever its total. "
+            "Expect major revisions or a fail until the critical findings are resolved."
+            if integrity_failure else ""
+        ),
         "integrity_findings": findings,
         "caps": caps,
         "fix_list": [_prose(x) for x in _as_list(raw.get("fix_list")) if _prose(x)][:14],
@@ -326,6 +356,7 @@ def _finalize(
 
 
 _INTEGRITY_CAPS = {"critical": 40, "major": 60}
+_CRITICAL_ALWAYS_HITS = ("data analysis", "conclusion")
 
 _DOCTORAL = re.compile(r"\b(?:doctor\s+of|doctorate|doctoral|ph\.?\s?d\b|d\.?b\.?a\b)", re.I)
 _MASTERS = re.compile(r"\b(?:master\s+of|master[\'\u2019]?s|masters|m\.?sc\b|m\.?b\.?a\b|m\.?phil\b)", re.I)
@@ -372,7 +403,13 @@ def _apply_integrity_caps(criteria: list[dict], findings: list[dict]) -> list[di
         limit = _INTEGRITY_CAPS.get(finding["severity"])
         if limit is None:
             continue
-        for index in finding["affects"]:
+        affected = set(finding["affects"])
+        if finding["severity"] == "critical":
+            # The brief: integrity failures keep Data Analysis and Conclusion low.
+            affected |= {
+                i for i, c in enumerate(criteria) if any(k in c["name"].lower() for k in _CRITICAL_ALWAYS_HITS)
+            }
+        for index in sorted(affected):
             criterion = criteria[index]
             if criterion["mark"] > limit:
                 caps.append(
@@ -387,6 +424,65 @@ def _apply_integrity_caps(criteria: list[dict], findings: list[dict]) -> list[di
                 )
                 criterion["mark"] = limit
     return caps
+
+
+def _mark_from(item: dict) -> int:
+    """Rubric level (0-5, x20) when the model gave one, else a 0-100 mark."""
+    level = item.get("level")
+    if isinstance(level, (int, float)) or (isinstance(level, str) and re.search(r"\d", level)):
+        value = _num(level)
+        if 0 <= value <= 5:
+            return int(round(value * 20))
+        if 5 < value <= 100:  # a percentage slipped into the level field
+            return int(round(value))
+    return max(0, min(100, int(round(_num(item.get("mark"))))))
+
+
+_FUTURE_METHOD = re.compile(
+    r"[^.\n]{0,110}\b(?:will be (?:collected|distributed|administered|rated|analy[sz]ed|conducted|sent|invited"
+    r"|selected|recruited|measured|issued)|will (?:collect|distribute|administer|analy[sz]e|conduct|consist"
+    r"|recruit|measure|issue))\b[^.\n]{0,110}",
+    re.I,
+)
+_COACHING = re.compile(
+    r"[^.\n]{0,110}\b(?:the author should|before final submission|highlighted in yellow|revision note"
+    r"|coaching note|should be replaced or qualified|insert verified|to be inserted)\b[^.\n]{0,110}",
+    re.I,
+)
+
+
+def scan_integrity_signals(thesis_text: str) -> str:
+    """Pattern search for two integrity failures the brief names: a method written
+    in the future tense, and notes to the author left in the text. Deterministic,
+    so it does not depend on the model noticing them."""
+    pieces = PAGE_MARKER.split(thesis_text)
+    chunks = [(None, pieces[0])] + [(int(pieces[i]), pieces[i + 1]) for i in range(1, len(pieces) - 1, 2)]
+    hits = {"future": [], "coaching": []}
+    for page, chunk in chunks:
+        flat = " ".join(chunk.split())
+        for key, pattern in (("future", _FUTURE_METHOD), ("coaching", _COACHING)):
+            hits[key] += [(page, m.group(0).strip()) for m in pattern.finditer(flat)]
+    labels = {
+        "future": "future-tense method wording (will be collected / will consist of ...)",
+        "coaching": "notes to the author or revision notes",
+    }
+    lines = []
+    for key in ("future", "coaching"):
+        found = hits[key]
+        if not found:
+            continue
+        pages = sorted({p for p, _ in found if p})
+        where = f" on pages {pages[:12]}" if pages else ""
+        examples = "; ".join((f"page {p}: " if p else "") + f'"{text[:200]}"' for p, text in found[:3])
+        lines.append(f"- {labels[key]}: {len(found)} match(es){where}. Examples - {examples}")
+    return "\n".join(lines)
+
+
+def _signals_block(thesis_text: str) -> str:
+    signals = scan_integrity_signals(thesis_text)
+    if not signals:
+        return ""
+    return f"\nSYSTEM-DETECTED SIGNALS (pattern search; check each in context):\n---\n{signals}\n---\n"
 
 
 def _normalize_weights(criteria: list[dict]) -> bool:
@@ -539,7 +635,8 @@ def _build_report_markdown(result: dict) -> str:
         f"**Student:** {student['name'] or 'Not stated'}  ",
         f"**Thesis title:** {student['title'] or 'Not stated'}  ",
         f"**Date of feedback:** {result['date']}  ",
-        f"**Overall mark:** {result['overall_mark']}% | {result['classification']}",
+        f"**Overall mark:** {result['overall_mark']}% | {result['classification']}"
+        + (" | integrity failure" if result.get("integrity_failure") else ""),
         "",
         "## 1. Summary of Marks",
         "",
@@ -553,6 +650,7 @@ def _build_report_markdown(result: dict) -> str:
         "",
         f"**Classification: {result['classification']}**",
         "",
+        *([f"**{result['outcome_note']}**", ""] if result.get("outcome_note") else []),
         "*Contribution = Mark x Weight / 100.*",
     ]
     if result["weights_normalized"]:

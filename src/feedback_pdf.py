@@ -201,7 +201,8 @@ def build_feedback_pdf(result: dict) -> bytes:
             ("Module Name / Code", student["module"] or "Not provided", bold),
             ("Thesis Title", student["title"] or "Not stated in the thesis", plain),
             ("Date of Feedback", result["date"], bold),
-            ("Overall Mark", f"{result['overall_mark']}% | {result['classification']}",
+            ("Overall Mark", f"{result['overall_mark']}% | {result['classification']}"
+             + (" | integrity failure" if result.get("integrity_failure") else ""),
              FontFace(emphasis="BOLD", color=GREEN if passed else RED)),
         ]
     )
@@ -234,6 +235,8 @@ def build_feedback_pdf(result: dict) -> bytes:
     pdf.set_text_color(*(GREEN if passed else RED))
     pdf.cell(0, 6, f"Classification: {result['classification']}", align="C", **NEXT_LINE)
     pdf._body()
+    if result.get("outcome_note"):
+        pdf.para(result["outcome_note"], size=9, color=RED, align="C", after=1.5)
     first = criteria[0]
     note = (
         f"Contribution = Mark x Weight / 100. Example: Criterion 1 is {first['mark']}% x {first['weight']:g} / 100 = "
