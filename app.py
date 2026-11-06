@@ -58,9 +58,11 @@ def _evaluate_thesis_cached(
     supporting: str,
     supporting_names: tuple,
     level: str,
+    check_refs: bool,
 ) -> dict:
     return evaluate_thesis(
-        guidelines_text, thesis_text, student_name, student_id, module, supporting, supporting_names, level
+        guidelines_text, thesis_text, student_name, student_id, module, supporting, supporting_names, level,
+        check_refs,
     )
 
 
@@ -208,12 +210,20 @@ if tool == "Thesis Qualification Checker":
             help="Auto-detect reads the thesis cover page. Choose a level to override it.",
         )
 
+    check_refs = st.checkbox(
+        "Check journal references online (adds about 1-2 minutes)",
+        value=True,
+        help="Looks up each journal-article reference in the free Crossref index. Entries it cannot find are "
+        "listed for you to verify; books, reports and theses are not checked.",
+    )
+
     if st.button("Evaluate Thesis", type="primary", disabled=not (guidelines_text and thesis_text)):
         try:
             result = _evaluate_thesis_cached(
                 guidelines_text, thesis_text, student_name.strip(), student_id.strip(), module.strip(),
                 supporting_text, supporting_names,
                 "" if level_choice == "Auto-detect" else level_choice,
+                check_refs,
             )
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             friendly = _explain_api_error(exc)
@@ -238,6 +248,14 @@ if tool == "Thesis Qualification Checker":
                 )
             if result.get("outcome_note"):
                 st.warning(result["outcome_note"])
+            ref = result.get("reference_check")
+            if ref and not ref.get("available") and ref.get("reason"):
+                st.caption(f"Online reference check was skipped: {ref['reason']}.")
+            elif ref and ref.get("available"):
+                st.caption(
+                    f"Reference check: {ref['matched']} of {ref['articles']} journal-article references were "
+                    "confirmed in Crossref."
+                )
             if result.get("findings_dropped"):
                 st.caption(
                     f"{result['findings_dropped']} finding(s) were removed because the thesis text cannot support them."

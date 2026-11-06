@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
+from concurrent.futures import ThreadPoolExecutor
 
 from src import report_template as tpl
 from src.llm_client import call_json
+from src.reference_check import check_references
 
 PAGE_MARKER = re.compile(r"\[\[Page (\d+)\]\]")
 
@@ -56,6 +58,19 @@ A thesis with a sound core and only minor gaps should score in the 70s-80s on th
 LEVEL: mark to the standard of the programme level given in SUBMISSION FACTS. A doctoral thesis
 must show an original contribution, a replicable method and trustworthy data; do not apply
 master's-level leniency.
+
+MARKING ANCHORS (read the rubric descriptors literally; length and effort do not raise a level):
+- Literature Review: level 4 or more needs sources that are "compared and questioned, not only
+  summed up". A chapter that mostly describes one source after another, however long and however
+  many sources it lists, is level 2.5 to 3. Say which descriptor words you applied.
+- Organization: level 4 needs a "strong and well controlled" structure. When the same results,
+  definitions or interpretations are restated in full in more than one chapter, the flow is heavy:
+  level 3. SYSTEM-DETECTED SIGNALS may list restated passages - check them.
+- Grammar and Punctuation: level 4 means "a few" errors. Numbers in the prose that contradict
+  each other or the tables (counts and percentages that do not agree, a stated majority that the
+  figures do not show), mixed British and American spelling and repeated wording slips count as
+  errors; several of them mean level 2 to 2.5.
+- Do not raise a criterion because the topic is interesting or the thesis is long.
 
 INTEGRITY FIRST: doctoral integrity comes before everything else. Made-up or simulated data, notes
 to the author left in the text, a method written in the future tense in a finished thesis, and
@@ -214,8 +229,13 @@ def evaluate_thesis(
     supporting: str = "",
     supporting_names: tuple = (),
     level: str = "",
+    check_refs: bool = False,
 ) -> dict:
     facts = _submission_facts(thesis_text)
+    # The online reference lookup is slow (about 1-2 minutes) and independent of the
+    # model, so it runs alongside the model call.
+    ref_pool = ThreadPoolExecutor(max_workers=1)
+    ref_future = ref_pool.submit(check_references, thesis_text) if check_refs else None
     known_level = _level_word(level) or detect_level(thesis_text, guidelines_text)
     prompt = USER_PROMPT_TEMPLATE.format(
         guidelines=guidelines_text.strip(),
@@ -229,8 +249,17 @@ def evaluate_thesis(
         supporting_block=SUPPORTING_BLOCK.format(supporting=supporting.strip()) if supporting.strip() else "",
         signals_block=_signals_block(thesis_text),
     )
-    raw = call_json(SYSTEM_PROMPT, prompt)
-    result = _finalize(raw, thesis_text, facts, student_name, student_id, module, known_level)
+    try:
+        raw = call_json(SYSTEM_PROMPT, prompt)
+    finally:
+        ref_pool.shutdown(wait=False)
+    ref_check = None
+    if ref_future is not None:
+        try:
+            ref_check = ref_future.result(timeout=300)
+        except Exception:  # noqa: BLE001 - the lookup is a bonus; never fail the report over it
+            ref_check = {"available": False, "reason": "the lookup did not finish"}
+    result = _finalize(raw, thesis_text, facts, student_name, student_id, module, known_level, ref_check)
     result["supporting_names"] = list(supporting_names)
     result["full_report_markdown"] = _build_report_markdown(result)
     return result
@@ -252,6 +281,7 @@ def _submission_facts(thesis_text: str) -> dict:
 def _finalize(
     raw: dict, thesis_text: str, facts: dict, student_name: str, student_id: str, module: str,
     known_level: str = "",
+    ref_check: dict | None = None,
 ) -> dict:
     items = raw.get("criteria") if isinstance(raw, dict) else None
     if not isinstance(items, list) or not items:
@@ -306,6 +336,7 @@ def _finalize(
     findings_dropped = len(findings) - len(kept)
     findings = kept
     caps = _apply_integrity_caps(criteria, findings)
+    caps += _apply_reference_check(criteria, findings, ref_check)
 
     total = 0.0
     for criterion in criteria:
@@ -357,6 +388,7 @@ def _finalize(
         "integrity_findings": findings,
         "caps": caps,
         "findings_dropped": findings_dropped,
+        "reference_check": {k: v for k, v in (ref_check or {}).items() if k != "unconfirmed"} or None,
         "fix_list": [_prose(x) for x in _as_list(raw.get("fix_list")) if _prose(x)][:14],
         "scale": scale_rows,
         "quotes_dropped": dropped,
@@ -369,6 +401,9 @@ def _finalize(
 
 _INTEGRITY_CAPS = {"critical": 40, "major": 60}
 _CRITICAL_ALWAYS_HITS = ("data analysis", "conclusion")
+# When a critical finding damages the results themselves (scale breach, copied
+# statistics), the results sit at fail level (level 1) and the conclusion at 1.5.
+_RESULTS_UNSAFE_FLOORS = {"data analysis": 20, "conclusion": 30}
 # Integrity can only limit these. A model that says a name mismatch "affects" the
 # abstract would otherwise drag down criteria the university did not touch.
 _CAPPABLE = ("method", "data analysis", "conclusion", "citation", "reference")
@@ -419,6 +454,9 @@ def _apply_integrity_caps(criteria: list[dict], findings: list[dict]) -> list[di
         if limit is None:
             continue
         affected = {i for i in finding["affects"] if any(k in criteria[i]["name"].lower() for k in _CAPPABLE)}
+        results_unsafe = finding["severity"] == "critical" and any(
+            "data analysis" in criteria[i]["name"].lower() for i in affected
+        )
         if finding["severity"] == "critical":
             # The brief: integrity failures keep Data Analysis and Conclusion low.
             affected |= {
@@ -426,19 +464,71 @@ def _apply_integrity_caps(criteria: list[dict], findings: list[dict]) -> list[di
             }
         for index in sorted(affected):
             criterion = criteria[index]
-            if criterion["mark"] > limit:
-                caps.append(
-                    {
-                        "criterion": index + 1,
-                        "name": criterion["name"],
-                        "from_mark": criterion["mark"],
-                        "to_mark": limit,
-                        "finding": f"2.{number}",
-                        "severity": finding["severity"],
-                    }
-                )
-                criterion["mark"] = limit
+            cap = limit
+            if results_unsafe:
+                # Unsafe results: the university holds the results at fail level and the
+                # conclusion, which rests on them, just above it.
+                for key, floor in _RESULTS_UNSAFE_FLOORS.items():
+                    if key in criterion["name"].lower():
+                        cap = min(cap, floor)
+            _cap_mark(caps, criterion, index, cap, f"2.{number}", finding["severity"])
     return caps
+
+
+_REF_FINDING_SHARE = 0.15  # share of journal references Crossref could not confirm -> major finding
+_REF_CAP_SHARE = 0.25  # ... and above this the Citations (40) and Literature (50) marks are limited
+_REF_CAPS = {"citation": 40, "reference": 40, "literature": 50}
+
+
+def _apply_reference_check(criteria: list[dict], findings: list[dict], ref_check: dict | None) -> list[dict]:
+    """Turn the online reference lookup into a finding and, when many journal
+    references cannot be confirmed, limits on Citations and Literature. The wording
+    stays factual: Crossref misses some real works, so the student must verify."""
+    caps: list[dict] = []
+    if not ref_check or not ref_check.get("available") or ref_check.get("articles", 0) < 10:
+        return caps
+    share = ref_check["unconfirmed_share"]
+    if share < _REF_FINDING_SHARE:
+        return caps
+    unconfirmed = ref_check["unconfirmed"]
+    examples = "; ".join(f'"{" ".join(e.split())[:170]}"' for e in unconfirmed[:6])
+    affects = [i for i, c in enumerate(criteria) if any(k in c["name"].lower() for k in _REF_CAPS)]
+    findings.append(
+        {
+            "title": "Journal references that could not be confirmed",
+            "severity": "major",
+            "affects": affects,
+            "detail": (
+                f"{len(unconfirmed)} of {ref_check['articles']} journal-article references ({share:.0%}) could not be "
+                "matched to a published work in the Crossref scholarly index when checked automatically. Crossref "
+                "does not hold every real work, so this is not proof that an entry is wrong, but each one must be "
+                "checked against the original source and replaced if it cannot be opened. Examples: " + examples
+            ),
+            "quotes": [],
+        }
+    )
+    label = f"2.{len(findings)}"
+    if share >= _REF_CAP_SHARE:
+        for index in affects:
+            name = criteria[index]["name"].lower()
+            cap = min(v for k, v in _REF_CAPS.items() if k in name)
+            _cap_mark(caps, criteria[index], index, cap, label, "major")
+    return caps
+
+
+def _cap_mark(caps: list, criterion: dict, index: int, cap: int, finding_label: str, severity: str) -> None:
+    if criterion["mark"] > cap:
+        caps.append(
+            {
+                "criterion": index + 1,
+                "name": criterion["name"],
+                "from_mark": criterion["mark"],
+                "to_mark": cap,
+                "finding": finding_label,
+                "severity": severity,
+            }
+        )
+        criterion["mark"] = cap
 
 
 _MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
@@ -524,8 +614,51 @@ def scan_integrity_signals(thesis_text: str) -> str:
     return "\n".join(lines)
 
 
+def scan_repetition(thesis_text: str, min_sentences: int = 6) -> str:
+    """Sentences that largely restate an earlier sentence on a different page
+    (4-word-run overlap of at least 50%). Information for the Organization mark,
+    not a penalty by itself: a summary chapter legitimately restates some results."""
+    body = thesis_text[: thesis_text.rfind("\nReferences\n")] if "\nReferences\n" in thesis_text else thesis_text
+    pieces = PAGE_MARKER.split(body)
+    chunks = [(0, pieces[0])] + [(int(pieces[i]), pieces[i + 1]) for i in range(1, len(pieces) - 1, 2)]
+    sentences = []
+    front_matter = 12 if len(chunks) > 40 else 0  # cover, certificate, abstract and lists repeat by design
+    for page, chunk in chunks:
+        if page <= front_matter:
+            continue
+        flat = " ".join(chunk.split())
+        for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", flat):
+            words = re.findall(r"[a-z0-9]+", sentence.lower())
+            if len(words) >= 14:
+                sentences.append((page, words, sentence))
+    runs = [{tuple(w[i : i + 4]) for i in range(len(w) - 3)} for _, w, _ in sentences]
+    index: dict = {}
+    pairs = []
+    for i, grams in enumerate(runs):
+        shared: dict = {}
+        for gram in grams:
+            for j in index.get(gram, ()):
+                shared[j] = shared.get(j, 0) + 1
+        for j, count in shared.items():
+            if count / min(len(grams), len(runs[j])) >= 0.5 and sentences[i][0] != sentences[j][0]:
+                pairs.append((j, i))
+        for gram in grams:
+            index.setdefault(gram, []).append(i)
+    restated = {i for _, i in pairs}
+    if len(restated) < min_sentences:
+        return ""
+    farthest = sorted(pairs, key=lambda ji: sentences[ji[1]][0] - sentences[ji[0]][0], reverse=True)
+    examples = "; ".join(
+        f'page {sentences[i][0]} repeats page {sentences[j][0]}: "{sentences[i][2][:110]}"' for j, i in farthest[:3]
+    )
+    return f"- passages restated on a different page: {len(restated)} sentence(s). Examples - {examples}"
+
+
 def _signals_block(thesis_text: str) -> str:
     signals = scan_integrity_signals(thesis_text)
+    repetition = scan_repetition(thesis_text)
+    if repetition:
+        signals = f"{signals}\n{repetition}" if signals else repetition
     if not signals:
         return ""
     return f"\nSYSTEM-DETECTED SIGNALS (pattern search; check each in context):\n---\n{signals}\n---\n"
