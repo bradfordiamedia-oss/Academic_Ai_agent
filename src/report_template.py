@@ -1,7 +1,7 @@
-"""Letterhead, grading scale and default rubric for the Detailed Feedback report.
+"""Helpers shared by every university's Detailed Feedback report.
 
-Everything institution-specific lives here, so the issuing institution's
-wording can be changed without touching the evaluator or the PDF renderer.
+University-specific content (rubric, grading scale, pass mark, letterhead) lives
+in `src/universities/`.
 """
 from __future__ import annotations
 
@@ -9,70 +9,12 @@ from datetime import date
 from pathlib import Path
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
-HEADER_IMAGE = ASSETS_DIR / "report_header.png"  # full-width page header (Bradford logo)
-FOOTER_IMAGE = ASSETS_DIR / "report_footer.png"  # full-width page footer (office addresses)
 FONT_DIR = ASSETS_DIR / "fonts"
-
-INSTITUTION = {
-    # Name of the university whose marking scale/rubric the guidelines use.
-    "short": "EIU-Paris",
-    # Who the feedback is prepared for (shown in the closing note).
-    "issued_by": "Bradford International Alliance",
-}
-
-# (criterion name, weight %) - used only when the uploaded guidelines do not
-# state a readable marking rubric. This is the EIU Doctorate Thesis rubric.
-DEFAULT_RUBRIC = [
-    ("Topic, Research Question and Thesis Statement", 5),
-    ("Abstract", 5),
-    ("Research Rationale", 5),
-    ("Literature Review", 20),
-    ("Methodology / Research Design", 20),
-    ("Data Analysis and Presentation of Results/Findings", 20),
-    ("Conclusion, Implications and Recommendations", 10),
-    ("Organization", 5),
-    ("Grammar and Punctuation", 5),
-    ("Citations and References", 5),
-]
-
-PASS_MARK = 50
-
-# ECTS-style scale. "{level}" is replaced with e.g. "doctoral" (or dropped).
-DEFAULT_SCALE = [
-    {"label": "Higher Distinction", "min": 90, "max": 100, "meaning": "Rare. Outstanding {level} work."},
-    {"label": "Distinction", "min": 80, "max": 89, "meaning": "Strong {level} standard."},
-    {"label": "First Division", "min": 70, "max": 79, "meaning": "Clear pass at a high level."},
-    {
-        "label": "Second Division",
-        "min": 60,
-        "max": 69,
-        "meaning": "Solid pass. 60% is already very good under this European scale.",
-    },
-    {"label": "Satisfactory", "min": 50, "max": 59, "meaning": "Minimum pass band."},
-    {"label": "Unsatisfactory (Fail)", "min": 0, "max": 49, "meaning": ""},
-]
 
 
 def format_date(d: date | None = None) -> str:
     d = d or date.today()
     return f"{d.day} {d:%B %Y}"
-
-
-def scale_text_for_prompt() -> str:
-    return "\n".join(
-        f"- {band['min']}-{band['max']}: {band['label']}" for band in DEFAULT_SCALE
-    )
-
-
-def rubric_text_for_prompt() -> str:
-    return "\n".join(f"{i}. {name} ({weight}%)" for i, (name, weight) in enumerate(DEFAULT_RUBRIC, 1))
-
-
-def band_for(mark: int) -> dict:
-    for band in DEFAULT_SCALE:
-        if band["min"] <= mark <= band["max"]:
-            return band
-    return DEFAULT_SCALE[-1]
 
 
 def band_range_text(band: dict) -> str:

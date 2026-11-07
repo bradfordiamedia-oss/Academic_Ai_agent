@@ -108,6 +108,35 @@ def test_university_marks_reproduce_44_with_levels():
     assert int(total + 0.5) == 44
 
 
+def test_eiu_profile_matches_the_format_that_was_saved():
+    from src.universities import choices, get_university
+    eiu = get_university("eiu")
+    assert eiu.pass_mark == 50 and eiu.strict_integrity and eiu.scale_name == "ECTS"
+    assert [w for _, w in eiu.rubric] == [5, 5, 5, 20, 20, 20, 10, 5, 5, 5]
+    assert eiu.band_for(45)["label"] == "Unsatisfactory (Fail)" and eiu.band_for(80)["label"] == "Distinction"
+    assert eiu.next_band_up(45) == "Satisfactory" and eiu.next_band_up(95) is None
+    assert eiu.header_image.exists() and eiu.footer_image.exists()
+    assert ("eiu", "EIU-Paris (European International University)") in choices()
+    assert get_university(None).key == "eiu" and get_university("unknown").key == "eiu"
+
+
+def test_prompt_is_built_from_the_profile():
+    prompt = te.build_system_prompt(__import__("src.universities", fromlist=["x"]).get_university("eiu"))
+    assert "Abstract (5%)" in prompt and "90-100: Higher Distinction" in prompt
+    assert "CALIBRATION EXAMPLE" in prompt and "{{" not in prompt
+
+
+def test_non_strict_university_lists_findings_but_changes_no_marks():
+    from dataclasses import replace
+    from src.universities import get_university
+    lenient = replace(get_university("eiu"), key="x", strict_integrity=False)
+    raw = {"criteria": [{"name": n, "weight": w, "level": 4} for n, w in __import__("src.universities", fromlist=["x"]).get_university("eiu").rubric],
+           "integrity_findings": [{"title": "t", "severity": "critical", "affects": [6], "detail": "d"}]}
+    res = te._finalize(raw, "text", te._submission_facts("text"), "", "", "", "doctoral", None, lenient)
+    assert res["overall_mark"] == 80 and not res["integrity_failure"] and res["caps"] == []
+    assert res["integrity_findings"] and res["university"] == "x"
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

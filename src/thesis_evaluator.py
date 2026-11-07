@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from src import report_template as tpl
 from src.llm_client import call_json
+from src.universities import get_university
 from src.reference_check import check_references
 
 PAGE_MARKER = re.compile(r"\[\[Page (\d+)\]\]")
@@ -98,13 +99,7 @@ cannot pass whatever its total. Major findings limit the criteria in "affects" t
 list the numbers of the criteria a finding damages (for example Methodology, Data Analysis,
 Conclusion, Citations). Mark every other criterion on its own merits.
 
-CALIBRATION EXAMPLE - the university's own marking of a doctoral thesis with critical integrity
-problems (method still in the future tense, a stated 5-point scale contradicted by means above 5,
-identical result rows for a direct path and a mediation path, a different person's name on the
-certificate): Topic level 4, Abstract 4, Rationale 4, Literature Review 2.5 (mostly summarises),
-Methodology 2, Data Analysis 1, Conclusion 1.5, Organization 3, Grammar 2, Citations 2, giving a
-weighted total of 44 and a fail. Well-written opening sections can reach level 4 even when the
-results are unsafe.
+{{CALIBRATION}}
 
 STEP 3 - EVIDENCE
 - Copy every quote EXACTLY from the thesis text, on one line, at most 60 words. To join separate
@@ -186,9 +181,16 @@ valid, strict JSON: escape double quotes inside strings as \\" and never put a r
 inside a string.
 """
 
-SYSTEM_PROMPT = _SYSTEM_TEMPLATE.replace("{{RUBRIC}}", tpl.rubric_text_for_prompt()).replace(
-    "{{SCALE}}", tpl.scale_text_for_prompt()
-)
+def build_system_prompt(profile) -> str:
+    """The examiner instructions with the university's rubric, scale and calibration example."""
+    return (
+        _SYSTEM_TEMPLATE.replace("{{RUBRIC}}", profile.rubric_text())
+        .replace("{{SCALE}}", profile.scale_text())
+        .replace("{{CALIBRATION}}", profile.calibration.strip())
+    )
+
+
+SYSTEM_PROMPT = build_system_prompt(get_university(None))  # default (EIU) prompt
 
 USER_PROMPT_TEMPLATE = """ASSESSMENT GUIDELINES:
 ---
@@ -230,7 +232,9 @@ def evaluate_thesis(
     supporting_names: tuple = (),
     level: str = "",
     check_refs: bool = False,
+    university: str = "eiu",
 ) -> dict:
+    profile = get_university(university)
     facts = _submission_facts(thesis_text)
     # The online reference lookup is slow (about 1-2 minutes) and independent of the
     # model, so it runs alongside the model call.
@@ -250,7 +254,7 @@ def evaluate_thesis(
         signals_block=_signals_block(thesis_text),
     )
     try:
-        raw = call_json(SYSTEM_PROMPT, prompt)
+        raw = call_json(build_system_prompt(profile), prompt)
     finally:
         ref_pool.shutdown(wait=False)
     ref_check = None
@@ -259,7 +263,7 @@ def evaluate_thesis(
             ref_check = ref_future.result(timeout=300)
         except Exception:  # noqa: BLE001 - the lookup is a bonus; never fail the report over it
             ref_check = {"available": False, "reason": "the lookup did not finish"}
-    result = _finalize(raw, thesis_text, facts, student_name, student_id, module, known_level, ref_check)
+    result = _finalize(raw, thesis_text, facts, student_name, student_id, module, known_level, ref_check, profile)
     result["supporting_names"] = list(supporting_names)
     result["full_report_markdown"] = _build_report_markdown(result)
     return result
@@ -282,7 +286,9 @@ def _finalize(
     raw: dict, thesis_text: str, facts: dict, student_name: str, student_id: str, module: str,
     known_level: str = "",
     ref_check: dict | None = None,
+    profile=None,
 ) -> dict:
+    profile = profile or get_university(None)
     items = raw.get("criteria") if isinstance(raw, dict) else None
     if not isinstance(items, list) or not items:
         raise RuntimeError(
@@ -335,8 +341,10 @@ def _finalize(
     kept = [f for f in findings if not _unsupported_reference_date_claim(f, printed_year)]
     findings_dropped = len(findings) - len(kept)
     findings = kept
-    caps = _apply_integrity_caps(criteria, findings)
-    caps += _apply_reference_check(criteria, findings, ref_check)
+    caps = []
+    if profile.strict_integrity:
+        caps = _apply_integrity_caps(criteria, findings)
+        caps += _apply_reference_check(criteria, findings, ref_check)
 
     total = 0.0
     for criterion in criteria:
@@ -345,10 +353,10 @@ def _finalize(
     total = round(total, 1)
     overall = int(total + 0.5)
 
-    integrity_failure = any(f["severity"] == "critical" for f in findings)
+    integrity_failure = profile.strict_integrity and any(f["severity"] == "critical" for f in findings)
     level_word = known_level or _level_word(raw.get("programme_level"))
-    band = tpl.band_for(overall)
-    pass_mark = tpl.PASS_MARK
+    band = profile.band_for(overall)
+    pass_mark = profile.pass_mark
     scale_rows = [
         {
             "label": b["label"],
@@ -356,7 +364,7 @@ def _finalize(
             "meaning": tpl.band_meaning(b, level_word),
             "current": b is band,
         }
-        for b in tpl.DEFAULT_SCALE
+        for b in profile.scale
     ]
 
     result = {
@@ -376,6 +384,7 @@ def _finalize(
         "weights_normalized": weights_normalized,
         "total": total,
         "overall_mark": overall,
+        "university": profile.key,
         "classification": band["label"],
         "pass_mark": pass_mark,
         "passed": overall >= pass_mark and not integrity_failure,

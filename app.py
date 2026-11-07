@@ -20,6 +20,7 @@ from src.feedback_pdf import build_feedback_pdf
 from src.pdf_export import markdown_to_pdf_bytes
 from src.support_files import describe_support_file
 from src.thesis_evaluator import evaluate_thesis
+from src.universities import choices as university_choices
 from src.ui import inject_theme, render_gauge, render_header, require_login
 
 load_dotenv()
@@ -59,10 +60,11 @@ def _evaluate_thesis_cached(
     supporting_names: tuple,
     level: str,
     check_refs: bool,
+    university: str,
 ) -> dict:
     return evaluate_thesis(
         guidelines_text, thesis_text, student_name, student_id, module, supporting, supporting_names, level,
-        check_refs,
+        check_refs, university,
     )
 
 
@@ -191,6 +193,14 @@ if tool == "Thesis Qualification Checker":
         "download as a PDF."
     )
 
+    universities = university_choices()
+    university = st.selectbox(
+        "University (report format)",
+        [key for key, _ in universities],
+        format_func=dict(universities).get,
+        help="Sets the report layout, grading scale, pass mark and default rubric.",
+    )
+
     col1, col2 = st.columns(2)
     with col1:
         guidelines_text = _read_upload("University guidelines", "guidelines")
@@ -223,7 +233,7 @@ if tool == "Thesis Qualification Checker":
                 guidelines_text, thesis_text, student_name.strip(), student_id.strip(), module.strip(),
                 supporting_text, supporting_names,
                 "" if level_choice == "Auto-detect" else level_choice,
-                check_refs,
+                check_refs, university,
             )
         except Exception as exc:  # noqa: BLE001 - surface any failure to the user
             friendly = _explain_api_error(exc)

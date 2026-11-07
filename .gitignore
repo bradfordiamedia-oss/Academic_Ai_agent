@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 venv/
 .streamlit/secrets.toml
+
+# Generated student reports must never be committed (public repo)
+*Detailed-Feedback*.pdf
+*_Detailed-Feedback_*.pdf

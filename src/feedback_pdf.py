@@ -5,7 +5,10 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 from fpdf.fonts import FontFace
 
+from PIL import Image
+
 from src import report_template as tpl
+from src.universities import get_university
 
 NAVY = (114, 46, 119)  # Bradford brand purple (matches the footer banner)
 TEXT = (30, 32, 38)
@@ -19,8 +22,15 @@ TOTAL_FILL = (251, 229, 229)
 BORDER = (170, 176, 188)
 
 PAGE_W, PAGE_H = 210, 297
-HEADER_H = PAGE_W * 155 / 1400  # header image is 1400 x 155 px
-FOOTER_H = PAGE_W * 357 / 2000  # footer image is 2000 x 357 px
+
+
+def _scaled_height(path, fallback_ratio: float) -> float:
+    """Height of a full-width (A4) image, from its own proportions."""
+    try:
+        with Image.open(path) as img:
+            return PAGE_W * img.height / img.width
+    except Exception:  # noqa: BLE001 - missing image: keep the layout, draw nothing
+        return PAGE_W * fallback_ratio
 
 BODY = 9.2
 LINE = 4.8
@@ -28,10 +38,13 @@ NEXT_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 
 
 class _FeedbackPDF(FPDF):
-    def __init__(self) -> None:
+    def __init__(self, profile) -> None:
         super().__init__(format="A4")
-        self.set_margins(16, HEADER_H + 8, 16)
-        self.set_auto_page_break(True, margin=FOOTER_H + 5)
+        self.profile = profile
+        self.header_h = _scaled_height(profile.header_image, 155 / 1400)
+        self.footer_h = _scaled_height(profile.footer_image, 357 / 2000)
+        self.set_margins(16, self.header_h + 8, 16)
+        self.set_auto_page_break(True, margin=self.footer_h + 5)
         self.add_font("DejaVu", "", str(tpl.FONT_DIR / "DejaVuSans.ttf"))
         self.add_font("DejaVu", "B", str(tpl.FONT_DIR / "DejaVuSans-Bold.ttf"))
         self.add_font("DejaVu", "I", str(tpl.FONT_DIR / "DejaVuSans-Oblique.ttf"))
@@ -40,17 +53,17 @@ class _FeedbackPDF(FPDF):
     # ---- page furniture: full-width image header and footer on every page
 
     def header(self) -> None:
-        if tpl.HEADER_IMAGE.exists():
-            self.image(str(tpl.HEADER_IMAGE), x=0, y=0, w=PAGE_W)
+        if self.profile.header_image.exists():
+            self.image(str(self.profile.header_image), x=0, y=0, w=PAGE_W)
         self.set_draw_color(*NAVY)
         self.set_line_width(0.5)
-        self.line(16, HEADER_H + 1, PAGE_W - 16, HEADER_H + 1)
+        self.line(16, self.header_h + 1, PAGE_W - 16, self.header_h + 1)
         self._body()
         self.set_y(self.t_margin)
 
     def footer(self) -> None:
-        if tpl.FOOTER_IMAGE.exists():
-            self.image(str(tpl.FOOTER_IMAGE), x=0, y=PAGE_H - FOOTER_H, w=PAGE_W)
+        if self.profile.footer_image.exists():
+            self.image(str(self.profile.footer_image), x=0, y=PAGE_H - self.footer_h, w=PAGE_W)
 
     # ---- text helpers
 
@@ -159,16 +172,9 @@ def _document_word(source_label: str) -> str:
     return "thesis PDF" if "PDF" in source_label else "thesis document"
 
 
-def _next_band_label(mark: int) -> str | None:
-    index = next((i for i, band in enumerate(tpl.DEFAULT_SCALE) if band["min"] <= mark <= band["max"]), None)
-    if index is None or index == 0:
-        return None
-    return tpl.DEFAULT_SCALE[index - 1]["label"]
-
-
-def _holds_down_label(mark: int) -> str:
-    if mark >= tpl.PASS_MARK:
-        higher = _next_band_label(mark)
+def _holds_down_label(profile, mark: int) -> str:
+    if mark >= profile.pass_mark:
+        higher = profile.next_band_up(mark)
         if higher:
             return f"What holds the mark below {higher}."
         return "What would protect this mark."
@@ -176,12 +182,12 @@ def _holds_down_label(mark: int) -> str:
 
 
 def build_feedback_pdf(result: dict) -> bytes:
-    inst = tpl.INSTITUTION
+    profile = get_university(result.get("university"))
     student = result["student"]
     criteria = result["criteria"]
     passed = result["passed"]
 
-    pdf = _FeedbackPDF()
+    pdf = _FeedbackPDF(profile)
     pdf.set_title(f"{result['report_title'].title()} - {student['name'] or 'Thesis'}")
     pdf.set_author("Bradford Academic Agent")
     pdf.add_page()
@@ -208,21 +214,31 @@ def build_feedback_pdf(result: dict) -> bytes:
     )
     pdf.ln(3.5)
 
+    ref = result.get("reference_check") or {}
+    if ref.get("available"):
+        references_note = (
+            f" Journal-article references were looked up automatically in Crossref ({ref['matched']} of "
+            f"{ref['articles']} were confirmed); books, reports and other sources were not checked."
+        )
+    else:
+        references_note = " Whether cited works exist was not checked."
     supporting = result.get("supporting_names") or []
     if supporting:
         scope = (
             "Checks were made on the submitted text, the assessment guidelines and summaries of the "
             f"supporting files you submitted ({', '.join(supporting)}). The analysis was not re-run, and "
-            "whether cited works exist and similarity (Turnitin) results were not checked."
+            "similarity (Turnitin) results were not checked."
+            + references_note
         )
     else:
         scope = (
-            "Checks were made on the submitted text and the assessment guidelines only: whether cited works "
-            "exist, similarity (Turnitin) results and any raw data files were not checked."
+            "Checks were made on the submitted text and the assessment guidelines only: similarity "
+            "(Turnitin) results and any raw data files were not checked."
+            + references_note
         )
     pdf.para(
-        f"This report explains each mark on the {result['rubric_name']} rubric. Marks use the European "
-        f"Credit Transfer and Accumulation System (ECTS) scale of {inst['short']}. Quotes are taken from "
+        f"This report explains each mark on the {result['rubric_name']} rubric. Marks use the "
+        f"{profile.short} grading scale ({profile.scale_name}). Quotes are taken from "
         f"your submitted {_document_word(result['source_label'])} and were checked against its text. "
         + scope
     )
@@ -284,7 +300,7 @@ def build_feedback_pdf(result: dict) -> bytes:
             for check in c["checks"]:
                 pdf.bullet(check)
         if c["holds_down"]:
-            pdf.para(f"{_holds_down_label(c['mark'])} {c['holds_down']}")
+            pdf.para(f"{_holds_down_label(profile, c['mark'])} {c['holds_down']}")
 
     # 4. Fix list
     pdf.h1("4. What to Fix to Reach a Pass" if not passed else "4. Recommended Improvements")
@@ -302,7 +318,7 @@ def build_feedback_pdf(result: dict) -> bytes:
         pdf.bullet(item, marker=f"{i}.", indent=2, width=7)
 
     # 5. Grading scale
-    pdf.h1(f"5. {inst['short']} Grading Scale (ECTS)")
+    pdf.h1(f"5. {profile.short} Grading Scale ({profile.scale_name})")
     pdf.scale_table(result["scale"])
     pdf.ln(2.5)
     pdf.set_font("DejaVu", "B", BODY)
@@ -311,7 +327,7 @@ def build_feedback_pdf(result: dict) -> bytes:
     pdf.ln(1.5)
     pdf.para(
         f"Draft feedback prepared with the Bradford Academic Agent on {result['date']} from the submitted "
-        f"thesis text and the assessment guidelines, for {inst['issued_by']}. The marks are indicative "
+        f"thesis text and the assessment guidelines, for {profile.issued_by}. The marks are indicative "
         "until the examiner confirms them on the formal marking sheet.",
         size=8, color=MUTED, align="L", line=4.2,
     )
