@@ -183,8 +183,15 @@ inside a string.
 
 def build_system_prompt(profile) -> str:
     """The examiner instructions with the university's rubric, scale and calibration example."""
+    template = _SYSTEM_TEMPLATE
+    if not profile.strict_integrity:
+        start = template.index("Critical findings are integrity failures:")
+        end = template.index("Mark every other criterion on its own merits.") + len(
+            "Mark every other criterion on its own merits."
+        )
+        template = template[:start] + profile.lenient_integrity_text + template[end:]
     return (
-        _SYSTEM_TEMPLATE.replace("{{RUBRIC}}", profile.rubric_text())
+        template.replace("{{RUBRIC}}", profile.rubric_text())
         .replace("{{SCALE}}", profile.scale_text())
         .replace("{{CALIBRATION}}", profile.calibration.strip())
     )

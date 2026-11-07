@@ -321,6 +321,9 @@ def build_feedback_pdf(result: dict) -> bytes:
     pdf.h1(f"5. {profile.short} Grading Scale ({profile.scale_name})")
     pdf.scale_table(result["scale"])
     pdf.ln(2.5)
+    if profile.scale_note:
+        pdf.para(profile.scale_note, size=8, color=MUTED, align="L", line=4.2)
+        pdf.ln(1.5)
     pdf.set_font("DejaVu", "B", BODY)
     pdf.cell(0, 6, f"Your current band: {result['overall_mark']}%.", **NEXT_LINE)
     pdf._body()

@@ -30,6 +30,14 @@ class University:
     # EIU treats integrity failures (future-tense method, inconsistent data, copied rows...) as a
     # fail whatever the total. Turn off for universities whose rules do not say so.
     strict_integrity: bool = True
+    # Printed under the grading scale. Use it when the scale or rubric is provisional.
+    scale_note: str = ""
+    # Used in place of the integrity paragraph of the prompt when strict_integrity is False.
+    lenient_integrity_text: str = (
+        "Integrity findings are reported with their severity and explained, but the system does not change "
+        "any mark for them and they do not decide pass or fail. Mark every criterion on its own evidence. "
+        'In "affects" list the numbers of the criteria a finding damages.'
+    )
 
     # -- helpers used by the evaluator and the PDF builder ------------------
     def rubric_text(self) -> str:
@@ -49,9 +57,9 @@ class University:
         return None if index in (None, 0) else self.scale[index - 1]["label"]
 
 
-from src.universities import eiu  # noqa: E402  (after the class, which eiu imports)
+from src.universities import azteca, eiu  # noqa: E402  (after the class, which they import)
 
-UNIVERSITIES: dict[str, University] = {p.key: p for p in (eiu.PROFILE,)}
+UNIVERSITIES: dict[str, University] = {p.key: p for p in (eiu.PROFILE, azteca.PROFILE)}
 DEFAULT_KEY = "eiu"
 
 

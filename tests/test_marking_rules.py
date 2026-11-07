@@ -137,6 +137,25 @@ def test_non_strict_university_lists_findings_but_changes_no_marks():
     assert res["integrity_findings"] and res["university"] == "x"
 
 
+def test_azteca_profile_never_shows_eiu_wording():
+    import io
+    import pdfplumber
+    from src.feedback_pdf import build_feedback_pdf
+    from src.universities import choices, get_university
+    az = get_university("azteca")
+    assert az.key == "azteca" and "azteca" in dict(choices())
+    assert sum(w for _, w in az.rubric) == 100 and not az.strict_integrity and az.scale_note
+    prompt = te.build_system_prompt(az)
+    assert "EIU" not in prompt and "cannot pass whatever" not in prompt and "{{" not in prompt
+    raw = {"criteria": [{"name": n, "weight": w, "level": 3} for n, w in az.rubric],
+           "integrity_findings": [{"title": "t", "severity": "critical", "affects": [5], "detail": "d"}]}
+    res = te._finalize(raw, "text", te._submission_facts("text"), "", "", "", "doctoral", None, az)
+    assert res["overall_mark"] == 60 and res["passed"] and res["integrity_failure"] is False
+    with pdfplumber.open(io.BytesIO(build_feedback_pdf(res))) as pdf:
+        text = chr(10).join(page.extract_text() or "" for page in pdf.pages)
+    assert "EIU" not in text and "Azteca University Grading Scale" in text and "provisional" in text
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
