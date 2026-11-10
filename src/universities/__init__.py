@@ -57,9 +57,9 @@ class University:
         return None if index in (None, 0) else self.scale[index - 1]["label"]
 
 
-from src.universities import azteca, eiu  # noqa: E402  (after the class, which they import)
+from src.universities import azteca, eiu, lincoln  # noqa: E402  (after the class, which they import)
 
-UNIVERSITIES: dict[str, University] = {p.key: p for p in (eiu.PROFILE, azteca.PROFILE)}
+UNIVERSITIES: dict[str, University] = {p.key: p for p in (eiu.PROFILE, azteca.PROFILE, lincoln.PROFILE)}
 DEFAULT_KEY = "eiu"
 
 

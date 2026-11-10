@@ -156,6 +156,24 @@ def test_azteca_profile_never_shows_eiu_wording():
     assert "EIU" not in text and "Azteca University Grading Scale" in text and "provisional" in text
 
 
+def test_lincoln_profile_never_shows_other_university_names():
+    import io
+    import pdfplumber
+    from src.feedback_pdf import build_feedback_pdf
+    from src.universities import choices, get_university
+    lin = get_university("lincoln")
+    assert lin.key == "lincoln" and "lincoln" in dict(choices())
+    assert sum(w for _, w in lin.rubric) == 100 and not lin.strict_integrity and lin.scale_note
+    prompt = te.build_system_prompt(lin)
+    assert "EIU" not in prompt and "Azteca" not in prompt and "{{" not in prompt
+    raw = {"criteria": [{"name": n, "weight": w, "level": 3} for n, w in lin.rubric], "integrity_findings": []}
+    res = te._finalize(raw, "text", te._submission_facts("text"), "", "", "", "doctoral", None, lin)
+    assert res["overall_mark"] == 60 and res["university"] == "lincoln"
+    with pdfplumber.open(io.BytesIO(build_feedback_pdf(res))) as pdf:
+        text = chr(10).join(page.extract_text() or "" for page in pdf.pages)
+    assert "EIU" not in text and "Azteca" not in text and "Lincoln University Grading Scale" in text
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
